@@ -29,6 +29,7 @@ Claude Code는 config 디렉터리마다 OAuth 인증 정보를 **별도의 macO
 |---|---|
 | Keychain 서비스명 | 기본 config(`~/.claude`)는 `Claude Code-credentials`입니다. `CLAUDE_CONFIG_DIR` 지정 시에는 `Claude Code-credentials-<sha256(절대경로)의 앞 8자리 hex>`입니다. |
 | 검증 예시 | `sha256("/Users/alice/.claude/work")[0..8] = 4163034c` → `Claude Code-credentials-4163034c` |
+| Keychain 읽기 방식 | Security.framework 대신 `/usr/bin/security` CLI를 씁니다. Claude Code가 저장한 항목은 `security` 도구에 대한 접근 허용이 이미 걸려 있을 가능성이 높아서, 허용 창이 뜨지 않습니다. 앱을 다시 빌드해 서명이 바뀌어도 허용을 다시 묻지 않습니다. (구현 1단계에서 검증) |
 | 주의 | 경로 끝에 `/`가 붙으면 해시가 달라집니다. 경로는 틸드(`~`)를 확장하고 끝의 `/`를 제거해 정규화합니다. |
 | 사용량 API | `GET https://api.anthropic.com/api/oauth/usage`, 헤더 `Authorization: Bearer <accessToken>`, `anthropic-beta: oauth-2025-04-20` |
 | API 상태 | **비공식 엔드포인트**입니다. 구현 1단계에서 실제 응답 스키마를 검증하고, 스키마가 바뀌어도 앱이 죽지 않도록 방어적으로 파싱합니다. |
@@ -36,11 +37,11 @@ Claude Code는 config 디렉터리마다 OAuth 인증 정보를 **별도의 macO
 ## 3. 아키텍처
 
 ```text
-┌──────────── zsh: claude-****() ────────────┐
-│ 1. 세션 파일 등록  ~/.claude-rings/sessions/<셸 PID> │
+┌──────── zsh: claude_rings_run() ───────────┐
+│ 1. 세션 파일 등록  ~/.claude-rings/sessions/<셸 PID> (내용: config 경로) │
 │ 2. 앱 미실행 시 open -g ClaudeRings.app        │
-│ 3. CLAUDE_CONFIG_DIR=~/.claude/**** claude     │
-│ 4. 종료 시(trap) 세션 파일 삭제                  │
+│ 3. CLAUDE_CONFIG_DIR=<config 경로> claude      │
+│ 4. claude 종료 시 세션 파일 삭제                 │
 └────────────────────────────────────────────┘
                       │
                       ▼
@@ -48,7 +49,7 @@ Claude Code는 config 디렉터리마다 OAuth 인증 정보를 **별도의 macO
 │ AccountStore ──► 계정 목록(name, configDir)          │
 │      │                                              │
 │      ▼  (3분 주기, 계정별)                             │
-│ KeychainReader ──► accessToken ──► UsageClient ──► API │
+│ KeychainTokenProvider ─► token ─► UsageClient ─► API │
 │                                        │             │
 │                                        ▼             │
 │                              UsageViewModel(상태)     │
@@ -64,10 +65,11 @@ Claude Code는 config 디렉터리마다 OAuth 인증 정보를 **별도의 macO
 
 | 모듈 | 책임 | 의존 |
 |---|---|---|
-| `AccountStore` | `~/.config/claude-rings/accounts.json` 로드. 파일이 없으면 기본값(main=`~/.claude`, ****=`~/.claude/****`)으로 생성 | 파일 시스템 |
-| `KeychainReader` | config dir → 서비스명 변환, Keychain에서 credentials JSON을 읽어 `claudeAiOauth.accessToken` 추출 | Security.framework |
+| `AccountStore` | `~/.config/claude-rings/accounts.json` 로드. 파일이 없으면 기본값(main=`~/.claude` 하나)으로 생성하고, 추가 계정은 사용자가 직접 등록 | 파일 시스템 |
+| `KeychainService` / `KeychainTokenProvider` | config dir → 서비스명 변환, `/usr/bin/security find-generic-password -s <서비스명> -w`로 credentials JSON을 읽어 `claudeAiOauth.accessToken` 추출 | `/usr/bin/security` |
 | `UsageClient` | 사용량 API 호출 → `Usage` 모델(Session·Weekly 사용률, 리셋 시각) 반환 | URLSession |
-| `UsageViewModel` | 주기적 조회, 계정별 상태 머신 관리, 백오프 | 위 3개 |
+| `AccountPoller` | 토큰 읽기 → 조회 → 401 시 1회 재시도 → 다음 상태 결정 | 위 2개 |
+| `UsageViewModel` | 계정별 조회 루프, 백오프, 화면 상태 보관 | `AccountPoller` |
 | `SessionWatcher` | 세션 디렉터리의 PID 생존 확인(`kill(pid, 0)`), 전부 종료 시 앱 종료 | 파일 시스템 |
 | `RingsPanel` | 항상 위에 뜨는 투명 `NSPanel` + SwiftUI 뷰 | AppKit, SwiftUI |
 
@@ -114,26 +116,32 @@ Claude Code는 config 디렉터리마다 OAuth 인증 정보를 **별도의 macO
 
 ## 5. 실행·종료 수명 주기
 
-### 셸 함수(`~/.zshrc`의 alias를 대체)
+### 셸 함수(`scripts/claude-rings.zsh`, `~/.zshrc`의 alias를 대체)
 
 ```zsh
-claude-****() {
+claude_rings_run() {
+  local cfg="$1"; shift
   local dir="$HOME/.claude-rings/sessions"
-  mkdir -p "$dir" && touch "$dir/$$"
-  pgrep -x ClaudeRings >/dev/null || open -g -a ClaudeRings
-  trap "rm -f '$dir/$$'" EXIT INT TERM
-  CLAUDE_CONFIG_DIR=~/.claude/**** command claude "$@"
-  rm -f "$dir/$$"; trap - EXIT INT TERM
+  mkdir -p "$dir" && print -r -- "$cfg" > "$dir/$$"
+  pgrep -x ClaudeRings >/dev/null || open -g "$HOME/Applications/ClaudeRings.app"
+  CLAUDE_CONFIG_DIR="$cfg" command claude "$@"
+  local rc=$?
+  rm -f "$dir/$$"
+  return $rc
 }
+
+# 계정별 래퍼 예시
+claude-work() { claude_rings_run ~/.claude/work "$@"; }
 ```
 
-- `$$`는 claude-****을 실행한 **대화형 셸의 PID**입니다. 터미널 탭마다 다른 값입니다.
+- 세션 파일 이름은 claude를 실행한 **대화형 셸의 PID**(`$$`)이고, 내용은 **config 디렉터리 경로**입니다. 앱은 이 내용으로 "지금 실행 중인 계정"을 강조 표시합니다.
+- 터미널 탭마다 셸 PID가 다르므로 여러 세션을 동시에 추적할 수 있습니다.
 - 터미널을 강제로 닫아도 셸 PID가 사라지므로 `SessionWatcher`가 정리합니다.
 - `open -g`는 백그라운드로 실행하므로 터미널 포커스를 뺏지 않습니다.
 
 ### SessionWatcher
 - 5초마다 세션 디렉터리의 파일명(PID)을 `kill(pid, 0)`으로 확인합니다.
-- 죽은 PID의 파일은 삭제합니다.
+- 죽은 PID의 파일은 삭제하고, 살아 있는 파일의 내용(config 경로)을 모아 활성 계정 목록을 만듭니다.
 - 남은 파일이 0개인 상태가 10초 이상 지속되면 앱을 종료합니다. 유예 시간을 두는 이유는 연속 실행 중 잠깐 비는 순간에 앱이 꺼졌다 켜지는 것을 막기 위해서입니다.
 - 디버그용으로 `--standalone` 인자를 주면 세션과 무관하게 계속 실행합니다.
 
@@ -200,7 +208,7 @@ Apple의 Liquid Glass 디자인 언어(macOS 26+ / iOS 26+의 `glassEffect`)를 
 | 429 Too Many Requests | 이전 값을 유지(`stale`)하고 백오프 |
 | 네트워크 오류·타임아웃(10초) | 이전 값을 유지(`stale`)하고 백오프 |
 | 응답 스키마 불일치 | 필드별 옵셔널 파싱. 없는 필드는 "—"로 표시 |
-| Keychain 접근 거부 | `missing`으로 표시. 최초 1회 macOS 허용 창에서 "항상 허용"을 선택하도록 README에 안내 |
+| Keychain 접근 거부 | `missing`으로 표시. macOS 허용 창이 뜨면 "항상 허용"을 선택하도록 README에 안내 |
 | 설정 파일 손상 | 기본값으로 동작하고 로그 기록 |
 
 토큰 값은 로그·오류 메시지에 절대 출력하지 않습니다.
@@ -209,28 +217,37 @@ Apple의 Liquid Glass 디자인 언어(macOS 26+ / iOS 26+의 `glassEffect`)를 
 
 ```text
 claude-rings/
-├── Package.swift                 # Swift Package (macOS 26+)
+├── Package.swift                   # Swift Package (macOS 26+)
 ├── Sources/
-│   ├── ClaudeRingsCore/          # UI와 무관한 로직 (테스트 대상)
-│   │   ├── Account.swift         # 모델, AccountStore
-│   │   ├── KeychainReader.swift  # 서비스명 변환, 토큰 읽기
-│   │   ├── UsageClient.swift     # API 호출, 응답 파싱
-│   │   ├── UsageState.swift      # 상태, 색상 규칙, 백오프 계산
-│   │   └── SessionWatcher.swift
-│   └── ClaudeRings/              # 앱 실행 파일
-│       ├── main.swift            # NSApplication 설정
-│       ├── RingsPanel.swift      # NSPanel
-│       ├── RingsView.swift       # SwiftUI + Liquid Glass
-│       └── UsageViewModel.swift
+│   ├── ClaudeRingsCore/            # UI와 무관한 로직 (테스트 대상)
+│   │   ├── Account.swift           # Account, AppConfig, AccountStore
+│   │   ├── KeychainService.swift   # 경로 정규화, 서비스명 변환
+│   │   ├── TokenProvider.swift     # security CLI로 토큰 읽기
+│   │   ├── Usage.swift             # Usage 모델, 응답 파싱
+│   │   ├── UsageClient.swift       # API 요청, 상태 코드 해석
+│   │   ├── UsageState.swift        # 상태, 색상 단계, 백오프, 리셋 시간 표기
+│   │   ├── AccountPoller.swift     # 토큰 읽기 → 조회 → 401 재시도 → 상태 결정
+│   │   └── SessionWatcher.swift    # 세션 PID 추적, 종료 판단
+│   └── ClaudeRings/                # 앱 실행 파일
+│       ├── main.swift              # NSApplication 설정
+│       ├── AppDelegate.swift       # 조립, 세션 타이머
+│       ├── UsageViewModel.swift    # 계정별 조회 루프
+│       ├── RingsPanel.swift        # NSPanel
+│       └── RingsView.swift         # SwiftUI + Liquid Glass
 ├── Tests/ClaudeRingsCoreTests/
+├── Support/Info.plist              # .app 번들용 (LSUIElement)
 ├── scripts/
-│   ├── build-app.sh              # swift build → .app 번들 생성 → ~/Applications 설치
-│   └── claude-alias.zsh          # 셸 함수 예시
+│   ├── probe-usage.sh              # 사용량 API 수동 확인 (토큰 비출력)
+│   ├── build-app.sh                # swift build → .app 번들 → ~/Applications 설치
+│   └── claude-rings.zsh            # 셸 함수
 ├── docs/DESIGN.md
+├── docs/PLAN.md
 └── README.md
 ```
 
 ## 9. 테스트 전략
+
+Swift Testing(`import Testing`)으로 `ClaudeRingsCore`를 단위 테스트합니다.
 
 | 대상 | 방법 |
 |---|---|
