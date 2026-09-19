@@ -28,13 +28,43 @@ claude-rings는 설정한 **모든 config 디렉터리**의 사용량을 조회�
 
 ## 설치 · 사용법
 
-구현 완료 후 작성 예정입니다.
+1. 빌드 및 설치
+
+   ```bash
+   git clone https://github.com/loisRK/claude-rings.git
+   cd claude-rings
+   scripts/build-app.sh --install   # ~/Applications/ClaudeRings.app
+   ```
+
+2. 계정 등록 — 최초 실행 시 `~/.config/claude-rings/accounts.json`이 생성됩니다. 추가 계정을 넣으세요.
+
+   ```json
+   {
+     "accounts": [
+       { "name": "main", "configDir": "~/.claude" },
+       { "name": "work", "configDir": "~/.claude/work" }
+     ],
+     "pollIntervalSeconds": 180
+   }
+   ```
+
+3. 셸 함수 연결 — `~/.zshrc`에 추가합니다.
+
+   ```zsh
+   source /path/to/claude-rings/scripts/claude-rings.zsh
+   claude-work() { claude_rings_run ~/.claude/work "$@"; }
+   ```
+
+   `claude-work`를 실행하면 위젯이 뜨고, 이 함수로 실행한 세션이 모두 끝나면 위젯도 닫힙니다.
+
+4. 위젯 조작 — 드래그로 이동, 마우스를 올리면 리셋 시각 표시, 우클릭으로 새로고침·위치 초기화·설정 열기·종료
 
 ## 보안
 
 - Keychain의 토큰은 **읽기만** 하며 갱신하거나 쓰지 않습니다.
 - 토큰은 메모리에 캐싱하지 않고, 로그에도 남기지 않습니다.
-- 최초 실행 시 macOS가 Keychain 접근을 묻습니다. **항상 허용**을 선택하세요.
+- 최근 성공한 사용량 수치(토큰 아님)는 `~/Library/Caches/claude-rings/last-usage.json`에 캐시되며, 재시작 후 새로 조회할 때까지 연하게 표시됩니다.
+- macOS가 Keychain 접근을 물으면 **항상 허용**을 선택하세요.
 
 ## 참고
 
