@@ -3,7 +3,7 @@ import Foundation
 public enum FetchResult: Equatable, Sendable {
     case ok(Usage)
     case unauthorized
-    case rateLimited
+    case rateLimited(retryAfter: TimeInterval?)
     case failed
 }
 
@@ -30,11 +30,11 @@ public struct UsageClient: UsageFetching {
         return request
     }
 
-    public static func interpret(status: Int, data: Data) -> FetchResult {
+    public static func interpret(status: Int, data: Data, retryAfter: String? = nil) -> FetchResult {
         switch status {
         case 200: UsageParser.parse(data).map(FetchResult.ok) ?? .failed
         case 401, 403: .unauthorized
-        case 429: .rateLimited
+        case 429: .rateLimited(retryAfter: retryAfter.flatMap { Double($0) })
         default: .failed
         }
     }
@@ -42,8 +42,10 @@ public struct UsageClient: UsageFetching {
     public func fetch(token: String) async -> FetchResult {
         do {
             let (data, response) = try await session.data(for: Self.makeRequest(token: token))
-            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-            return Self.interpret(status: status, data: data)
+            let httpResponse = response as? HTTPURLResponse
+            let status = httpResponse?.statusCode ?? 0
+            let retryAfter = httpResponse?.value(forHTTPHeaderField: "Retry-After")
+            return Self.interpret(status: status, data: data, retryAfter: retryAfter)
         } catch {
             return .failed
         }

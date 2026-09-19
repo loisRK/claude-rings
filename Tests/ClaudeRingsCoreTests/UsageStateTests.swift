@@ -25,13 +25,14 @@ struct UsageStateTests {
     }
 
     @Test func transientFailureKeepsPreviousUsageAsStale() {
-        #expect(StatusReducer.next(previous: .ok(usage), result: .rateLimited) == .stale(usage))
+        #expect(StatusReducer.next(previous: .ok(usage), result: .rateLimited(retryAfter: nil)) == .stale(usage))
+        #expect(StatusReducer.next(previous: .ok(usage), result: .rateLimited(retryAfter: 3544)) == .stale(usage))
         #expect(StatusReducer.next(previous: .stale(usage), result: .failed) == .stale(usage))
     }
 
     @Test func transientFailureWithoutUsageIsError() {
         #expect(StatusReducer.next(previous: .loading, result: .failed) == .error)
-        #expect(StatusReducer.next(previous: .expired, result: .rateLimited) == .error)
+        #expect(StatusReducer.next(previous: .expired, result: .rateLimited(retryAfter: nil)) == .error)
     }
 
     @Test func backoffDoublesUpToMaximumAndResets() {
@@ -60,5 +61,17 @@ struct UsageStateTests {
     func resetFormatting(seconds: Int, expected: String) {
         let now = Date(timeIntervalSince1970: 1_000_000)
         #expect(ResetFormatter.string(until: now.addingTimeInterval(TimeInterval(seconds)), now: now) == expected)
+    }
+
+    @Test(arguments: [
+        (180.0, nil, 180.0),
+        (180.0, 3544.0, 3544.0),
+        (900.0, 60.0, 900.0),
+        (180.0, 99999.0, 7200.0),
+    ] as [(TimeInterval, TimeInterval?, TimeInterval)])
+    func pollScheduleFollowsRetryAfterWithUpperBound(
+        backoff: TimeInterval, retryAfter: TimeInterval?, expected: TimeInterval
+    ) {
+        #expect(PollSchedule.nextDelay(backoff: backoff, retryAfter: retryAfter) == expected)
     }
 }

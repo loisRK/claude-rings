@@ -87,10 +87,21 @@ struct AccountPollerTests {
     }
 
     @Test func rateLimitedKeepsStaleAndReportsTransientFailure() async {
-        let poller = AccountPoller(tokens: StubTokens([.success("t")]), fetcher: StubFetcher([.rateLimited]))
+        let poller = AccountPoller(
+            tokens: StubTokens([.success("t")]), fetcher: StubFetcher([.rateLimited(retryAfter: nil)]))
 
         let outcome = await poller.poll(account, previous: .ok(usage))
 
         #expect(outcome == PollOutcome(status: .stale(usage), transientFailure: true))
+    }
+
+    @Test func rateLimitedWithRetryAfterIsCarriedOnOutcome() async {
+        let poller = AccountPoller(
+            tokens: StubTokens([.success("t")]), fetcher: StubFetcher([.rateLimited(retryAfter: 3544)]))
+
+        let outcome = await poller.poll(account, previous: .ok(usage))
+
+        #expect(outcome.retryAfter == 3544)
+        #expect(outcome.transientFailure == true)
     }
 }

@@ -10,38 +10,42 @@ struct RingsView: View {
     @Namespace private var glassNamespace
 
     var body: some View {
-        GlassEffectContainer(spacing: 8) {
-            HStack(alignment: .top, spacing: 8) {
-                ForEach(model.accounts) { account in
-                    AccountBubble(
-                        account: account,
-                        status: model.status(for: account),
-                        isActive: model.isActive(account),
-                        isExpanded: hovered == account.name,
-                        namespace: glassNamespace)
-                    .onHover { inside in
-                        withAnimation(.spring(duration: 0.35)) {
-                            if inside {
-                                hovered = account.name
-                            } else if hovered == account.name {
-                                hovered = nil
+        TimelineView(.periodic(from: .now, by: 30)) { context in
+            GlassEffectContainer(spacing: 8) {
+                HStack(alignment: .top, spacing: 8) {
+                    ForEach(model.accounts) { account in
+                        AccountBubble(
+                            account: account,
+                            status: model.status(for: account),
+                            isActive: model.isActive(account),
+                            isExpanded: hovered == account.name,
+                            blockedUntil: model.blockedUntil(for: account),
+                            now: context.date,
+                            namespace: glassNamespace)
+                        .onHover { inside in
+                            withAnimation(.spring(duration: 0.35)) {
+                                if inside {
+                                    hovered = account.name
+                                } else if hovered == account.name {
+                                    hovered = nil
+                                }
                             }
                         }
                     }
                 }
             }
+            .padding(8)
+            .fixedSize()
+            .gesture(WindowDragGesture())
+            .contextMenu {
+                Button("지금 새로고침", action: actions.refresh)
+                Button("위치 초기화", action: actions.resetPosition)
+                Button("설정 파일 열기", action: actions.openConfig)
+                Divider()
+                Button("종료", action: actions.quit)
+            }
+            .onGeometryChange(for: CGSize.self) { $0.size } action: { onSizeChange($0) }
         }
-        .padding(8)
-        .fixedSize()
-        .gesture(WindowDragGesture())
-        .contextMenu {
-            Button("지금 새로고침", action: actions.refresh)
-            Button("위치 초기화", action: actions.resetPosition)
-            Button("설정 파일 열기", action: actions.openConfig)
-            Divider()
-            Button("종료", action: actions.quit)
-        }
-        .onGeometryChange(for: CGSize.self) { $0.size } action: { onSizeChange($0) }
     }
 }
 
@@ -50,6 +54,8 @@ private struct AccountBubble: View {
     let status: AccountStatus
     let isActive: Bool
     let isExpanded: Bool
+    let blockedUntil: Date?
+    let now: Date
     let namespace: Namespace.ID
 
     private var session: UsageWindow? { status.usage?.session }
@@ -58,6 +64,9 @@ private struct AccountBubble: View {
     private var isStale: Bool {
         if case .stale = status { true } else { false }
     }
+
+    /// 429 Retry-After로 사용량 조회 API가 일시 차단된 상태인지(Claude 사용 한도 초과와는 다름).
+    private var isBlocked: Bool { blockedUntil != nil }
 
     var body: some View {
         VStack(spacing: 6) {
@@ -71,6 +80,14 @@ private struct AccountBubble: View {
                     center
                 }
                 .frame(width: 40, height: 40)
+                .overlay(alignment: .topTrailing) {
+                    if isBlocked, status.usage != nil {
+                        Image(systemName: "clock.fill")
+                            .font(.system(size: 8))
+                            .foregroundStyle(.secondary)
+                            .offset(x: 2, y: -2)
+                    }
+                }
 
                 if isExpanded {
                     details
@@ -108,9 +125,19 @@ private struct AccountBubble: View {
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
         case .error:
-            Image(systemName: "exclamationmark")
-                .font(.system(size: 9, weight: .bold))
+            if let blockedUntil {
+                VStack(spacing: 1) {
+                    Image(systemName: "clock")
+                        .font(.system(size: 8, weight: .medium))
+                    Text(ResetFormatter.string(until: blockedUntil, now: now))
+                        .font(.system(size: 7, weight: .medium, design: .rounded))
+                }
                 .foregroundStyle(.secondary)
+            } else {
+                Image(systemName: "exclamationmark")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.secondary)
+            }
         case .ok, .stale:
             VStack(spacing: 0) {
                 Text(session.map { "\($0.remainingPercent)" } ?? "—")
@@ -128,6 +155,9 @@ private struct AccountBubble: View {
         VStack(alignment: .leading, spacing: 4) {
             detailRow(title: "Session", window: session)
             detailRow(title: "Weekly", window: weekly)
+            if let blockedUntil {
+                detailRow(title: "조회", value: "일시 제한 · \(ResetFormatter.string(until: blockedUntil, now: now)) 후 재시도")
+            }
         }
         .font(.system(size: 10, design: .rounded))
         .padding(.trailing, 7)
@@ -135,11 +165,15 @@ private struct AccountBubble: View {
     }
 
     private func detailRow(title: String, window: UsageWindow?) -> some View {
+        detailRow(title: title, value: window?.resetsAt.map { "\(ResetFormatter.string(until: $0)) 후 리셋" } ?? "—")
+    }
+
+    private func detailRow(title: String, value: String) -> some View {
         HStack(spacing: 6) {
             Text(title)
                 .foregroundStyle(.secondary)
                 .frame(width: 44, alignment: .leading)
-            Text(window?.resetsAt.map { "\(ResetFormatter.string(until: $0)) 후 리셋" } ?? "—")
+            Text(value)
         }
     }
 }

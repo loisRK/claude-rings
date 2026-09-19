@@ -4,10 +4,13 @@ public struct PollOutcome: Equatable, Sendable {
     public let status: AccountStatus
     /// 429·네트워크 오류처럼 백오프가 필요한 실패인지
     public let transientFailure: Bool
+    /// 429 응답의 Retry-After(초). 정수 초로 파싱된 경우에만 값이 있다.
+    public let retryAfter: TimeInterval?
 
-    public init(status: AccountStatus, transientFailure: Bool) {
+    public init(status: AccountStatus, transientFailure: Bool, retryAfter: TimeInterval? = nil) {
         self.status = status
         self.transientFailure = transientFailure
+        self.retryAfter = retryAfter
     }
 }
 
@@ -34,8 +37,23 @@ public struct AccountPoller: Sendable {
             result = await fetcher.fetch(token: refreshed)
         }
 
+        let transientFailure: Bool
+        let retryAfter: TimeInterval?
+        switch result {
+        case .rateLimited(let value):
+            transientFailure = true
+            retryAfter = value
+        case .failed:
+            transientFailure = true
+            retryAfter = nil
+        case .ok, .unauthorized:
+            transientFailure = false
+            retryAfter = nil
+        }
+
         return PollOutcome(
             status: StatusReducer.next(previous: previous, result: result),
-            transientFailure: result == .rateLimited || result == .failed)
+            transientFailure: transientFailure,
+            retryAfter: retryAfter)
     }
 }

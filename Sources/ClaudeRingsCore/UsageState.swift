@@ -34,8 +34,15 @@ public enum StatusReducer {
         switch result {
         case .ok(let usage): .ok(usage)
         case .unauthorized: .expired
-        case .rateLimited, .failed: previous.usage.map(AccountStatus.stale) ?? .error
+        case .rateLimited(_), .failed: previous.usage.map(AccountStatus.stale) ?? .error
         }
+    }
+}
+
+/// 서버의 Retry-After 지시와 로컬 백오프 중 더 긴 쪽을 따르되, 상한을 둔다.
+public enum PollSchedule {
+    public static func nextDelay(backoff: TimeInterval, retryAfter: TimeInterval?) -> TimeInterval {
+        max(backoff, min(retryAfter ?? 0, 7200))
     }
 }
 

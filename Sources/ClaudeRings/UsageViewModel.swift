@@ -7,6 +7,8 @@ import Observation
 final class UsageViewModel {
     let accounts: [Account]
     private(set) var statuses: [String: AccountStatus]
+    /// 429 Retry-After로 사용량 조회 API가 일시 차단된 계정의 해제 시각.
+    private(set) var blockedUntil: [String: Date] = [:]
     var activeConfigDirs: Set<String> = []
 
     @ObservationIgnored private let poller: AccountPoller
@@ -29,6 +31,10 @@ final class UsageViewModel {
 
     func status(for account: Account) -> AccountStatus {
         statuses[account.name] ?? .loading
+    }
+
+    func blockedUntil(for account: Account) -> Date? {
+        blockedUntil[account.name]
     }
 
     func isActive(_ account: Account) -> Bool {
@@ -60,12 +66,18 @@ final class UsageViewModel {
                     self.cachedUsages[account.name] = usage
                     UsageCache.save(self.cachedUsages)
                 }
+                if let retryAfter = outcome.retryAfter {
+                    self.blockedUntil[account.name] = Date.now.addingTimeInterval(min(retryAfter, 7200))
+                } else {
+                    self.blockedUntil.removeValue(forKey: account.name)
+                }
                 if outcome.transientFailure {
                     backoff.recordFailure()
                 } else {
                     backoff.recordSuccess()
                 }
-                try? await Task.sleep(for: .seconds(backoff.interval))
+                try? await Task.sleep(
+                    for: .seconds(PollSchedule.nextDelay(backoff: backoff.interval, retryAfter: outcome.retryAfter)))
             }
         }
     }

@@ -29,11 +29,26 @@ struct UsageClientTests {
     @Test(arguments: [
         (401, FetchResult.unauthorized),
         (403, .unauthorized),
-        (429, .rateLimited),
+        (429, .rateLimited(retryAfter: nil)),
         (500, .failed),
         (0, .failed),
     ])
     func mapsStatusCodes(status: Int, expected: FetchResult) {
         #expect(UsageClient.interpret(status: status, data: Data()) == expected)
+    }
+
+    @Test func rateLimitedWithIntegerRetryAfterParsesSeconds() {
+        let result = UsageClient.interpret(status: 429, data: Data(), retryAfter: "3544")
+        #expect(result == .rateLimited(retryAfter: 3544))
+    }
+
+    @Test func rateLimitedWithoutRetryAfterHeaderIsNil() {
+        let result = UsageClient.interpret(status: 429, data: Data(), retryAfter: nil)
+        #expect(result == .rateLimited(retryAfter: nil))
+    }
+
+    @Test func rateLimitedWithHTTPDateRetryAfterIsUnparsedAsNil() {
+        let result = UsageClient.interpret(status: 429, data: Data(), retryAfter: "Wed, 21 Oct 2015 07:28:00 GMT")
+        #expect(result == .rateLimited(retryAfter: nil))
     }
 }
