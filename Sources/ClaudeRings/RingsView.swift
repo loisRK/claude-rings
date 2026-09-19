@@ -153,15 +153,33 @@ private struct DualRing: View {
     @State private var pulse = false
 
     var body: some View {
-        ZStack {
+        ringsContent
+            .animation(.spring(duration: 0.6), value: outer)
+            .animation(.spring(duration: 0.6), value: inner)
+            .onChange(of: isLoading) { _, loading in
+                // 로딩을 벗어나면 다음 로딩 진입 시 애니메이션이 다시 트리거되도록 리셋한다.
+                if !loading { pulse = false }
+            }
+    }
+
+    /// `.loading` 동안에만 존재하는 서브트리로 펄스를 격리한다. `isLoading`이 false가 되면
+    /// 이 서브트리(그리고 그 안의 `repeatForever` 애니메이션)가 통째로 제거되므로,
+    /// 로딩을 벗어난 뒤에도 펄스가 계속되거나 깜빡이는 문제가 생기지 않는다.
+    @ViewBuilder
+    private var ringsContent: some View {
+        let rings = ZStack {
             ring(value: outer, lineWidth: 5).padding(2)
             ring(value: inner, lineWidth: 4).padding(10)
         }
-        .opacity(isLoading ? (pulse ? 0.35 : 0.1) : 1)
-        .animation(isLoading ? .easeInOut(duration: 1).repeatForever() : .default, value: pulse)
-        .animation(.spring(duration: 0.6), value: outer)
-        .animation(.spring(duration: 0.6), value: inner)
-        .onAppear { pulse = true }
+        if isLoading {
+            rings
+                .opacity(pulse ? 0.35 : 0.1)
+                .animation(.easeInOut(duration: 1).repeatForever(), value: pulse)
+                .onAppear { pulse = true }
+        } else {
+            rings
+                .opacity(1)
+        }
     }
 
     private func ring(value: Int?, lineWidth: CGFloat) -> some View {
