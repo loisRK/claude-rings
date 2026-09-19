@@ -80,12 +80,14 @@ private struct AccountBubble: View {
                     center
                 }
                 .frame(width: 40, height: 40)
-                .overlay(alignment: .topTrailing) {
+                .overlay(alignment: .center) {
                     if isBlocked, status.usage != nil {
+                        // 캡슐 glassEffect가 이 프레임을 원형으로 클리핑하므로, 링의
+                        // 우상단 호 안쪽(중심에서 약간 벗어난 지점)에 배지를 둬 잘리지 않게 한다.
                         Image(systemName: "clock.fill")
                             .font(.system(size: 8))
                             .foregroundStyle(.secondary)
-                            .offset(x: 2, y: -2)
+                            .offset(x: 11, y: -11)
                     }
                 }
 

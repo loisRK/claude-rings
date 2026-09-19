@@ -34,7 +34,7 @@ public struct UsageClient: UsageFetching {
         switch status {
         case 200: UsageParser.parse(data).map(FetchResult.ok) ?? .failed
         case 401, 403: .unauthorized
-        case 429: .rateLimited(retryAfter: retryAfter.flatMap { Double($0) })
+        case 429: .rateLimited(retryAfter: retryAfter.flatMap { Int($0).map(TimeInterval.init) })
         default: .failed
         }
     }
