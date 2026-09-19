@@ -10,8 +10,8 @@ struct RingsView: View {
     @Namespace private var glassNamespace
 
     var body: some View {
-        GlassEffectContainer(spacing: 12) {
-            HStack(alignment: .top, spacing: 12) {
+        GlassEffectContainer(spacing: 8) {
+            HStack(alignment: .top, spacing: 8) {
                 ForEach(model.accounts) { account in
                     AccountBubble(
                         account: account,
@@ -31,7 +31,7 @@ struct RingsView: View {
                 }
             }
         }
-        .padding(10)
+        .padding(8)
         .fixedSize()
         .gesture(WindowDragGesture())
         .contextMenu {
@@ -61,7 +61,7 @@ private struct AccountBubble: View {
 
     var body: some View {
         VStack(spacing: 6) {
-            HStack(spacing: 10) {
+            HStack(spacing: 7) {
                 ZStack {
                     DualRing(
                         outer: session?.remainingPercent,
@@ -70,14 +70,14 @@ private struct AccountBubble: View {
                         isDashed: status == .missing)
                     center
                 }
-                .frame(width: 56, height: 56)
+                .frame(width: 40, height: 40)
 
                 if isExpanded {
                     details
-                        .transition(.opacity.combined(with: .move(edge: .leading)))
+                        .transition(.opacity.combined(with: .move(edge: .trailing)))
                 }
             }
-            .padding(4)
+            .padding(3)
             .opacity(isStale ? 0.5 : 1)
             .glassEffect(.regular.interactive(), in: .capsule)
             .glassEffectID(account.name, in: namespace)
@@ -85,10 +85,10 @@ private struct AccountBubble: View {
             HStack(spacing: 3) {
                 Text(account.name)
                 if isActive {
-                    Circle().fill(.tint).frame(width: 4, height: 4)
+                    Circle().fill(.tint).frame(width: 3, height: 3)
                 }
             }
-            .font(.system(size: 10, weight: isActive ? .semibold : .regular, design: .rounded))
+            .font(.system(size: 9, weight: isActive ? .semibold : .regular, design: .rounded))
             .foregroundStyle(isActive ? .primary : .secondary)
         }
     }
@@ -100,23 +100,23 @@ private struct AccountBubble: View {
             EmptyView()
         case .expired:
             Text("만료")
-                .font(.system(size: 10, weight: .medium, design: .rounded))
+                .font(.system(size: 8, weight: .medium, design: .rounded))
                 .foregroundStyle(.secondary)
         case .missing:
             Text("로그인\n필요")
-                .font(.system(size: 9, weight: .medium, design: .rounded))
+                .font(.system(size: 7, weight: .medium, design: .rounded))
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
         case .error:
             Image(systemName: "exclamationmark")
-                .font(.system(size: 12, weight: .bold))
+                .font(.system(size: 9, weight: .bold))
                 .foregroundStyle(.secondary)
         case .ok, .stale:
             VStack(spacing: 0) {
                 Text(session.map { "\($0.remainingPercent)" } ?? "—")
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
                 Text(weekly.map { "\($0.remainingPercent)" } ?? "—")
-                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                    .font(.system(size: 8, weight: .medium, design: .rounded))
                     .foregroundStyle(.secondary)
             }
             .monospacedDigit()
@@ -129,8 +129,8 @@ private struct AccountBubble: View {
             detailRow(title: "Session", window: session)
             detailRow(title: "Weekly", window: weekly)
         }
-        .font(.system(size: 11, design: .rounded))
-        .padding(.trailing, 10)
+        .font(.system(size: 10, design: .rounded))
+        .padding(.trailing, 7)
         .fixedSize()
     }
 
@@ -138,7 +138,7 @@ private struct AccountBubble: View {
         HStack(spacing: 6) {
             Text(title)
                 .foregroundStyle(.secondary)
-                .frame(width: 50, alignment: .leading)
+                .frame(width: 44, alignment: .leading)
             Text(window?.resetsAt.map { "\(ResetFormatter.string(until: $0)) 후 리셋" } ?? "—")
         }
     }
@@ -168,8 +168,8 @@ private struct DualRing: View {
     @ViewBuilder
     private var ringsContent: some View {
         let rings = ZStack {
-            ring(value: outer, lineWidth: 5).padding(2)
-            ring(value: inner, lineWidth: 4).padding(10)
+            ring(value: outer, lineWidth: 3.5).padding(1.5)
+            ring(value: inner, lineWidth: 3).padding(7)
         }
         if isLoading {
             rings
