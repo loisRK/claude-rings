@@ -103,6 +103,8 @@ private struct AccountBubble: View {
 
             HStack(spacing: 3) {
                 Text(account.name)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                 if isActive {
                     Circle().fill(.tint).frame(width: 3, height: 3)
                 }
