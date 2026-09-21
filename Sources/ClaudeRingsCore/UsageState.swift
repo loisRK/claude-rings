@@ -29,6 +29,15 @@ public enum RingLevel: Equatable, Sendable {
     }
 }
 
+public enum RemainingPercent {
+    /// 여러 잔여율 중 가장 급한(=가장 낮은) 값을 고른다. 값이 없는 항목은 무시하고,
+    /// 하나만 있으면 그 값을, 전부 없으면 nil을 돌려준다. 어느 한도든 먼저 닥치는
+    /// 쪽이 실제 위험이므로, 메뉴바처럼 하나의 게이지·색으로 계정 상태를 요약할 때 쓴다.
+    public static func mostCritical(_ values: Int?...) -> Int? {
+        values.compactMap { $0 }.min()
+    }
+}
+
 public enum StatusReducer {
     public static func next(previous: AccountStatus, result: FetchResult) -> AccountStatus {
         switch result {

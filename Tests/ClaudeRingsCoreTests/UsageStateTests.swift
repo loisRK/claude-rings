@@ -183,4 +183,22 @@ struct UsageStateTests {
         let lastPollStartedAt = now.addingTimeInterval(-31)
         #expect(PollSchedule.shouldRefresh(now: now, blockedUntil: nil, lastPollStartedAt: lastPollStartedAt))
     }
+
+    @Test func mostCriticalPicksLowerOfTwoValues() {
+        #expect(RemainingPercent.mostCritical(80, 30) == 30)
+        #expect(RemainingPercent.mostCritical(30, 80) == 30)
+    }
+
+    @Test func mostCriticalIgnoresMissingValues() {
+        #expect(RemainingPercent.mostCritical(42, nil) == 42)
+        #expect(RemainingPercent.mostCritical(nil, 42) == 42)
+    }
+
+    @Test func mostCriticalIsNilWhenAllMissing() {
+        #expect(RemainingPercent.mostCritical(nil, nil) == nil)
+    }
+
+    @Test func mostCriticalHandlesTies() {
+        #expect(RemainingPercent.mostCritical(50, 50) == 50)
+    }
 }
