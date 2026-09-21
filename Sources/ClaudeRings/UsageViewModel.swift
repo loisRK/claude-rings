@@ -9,9 +9,12 @@ final class UsageViewModel {
     private(set) var statuses: [String: AccountStatus]
     /// 429 Retry-After로 사용량 조회 API가 일시 차단된 계정의 해제 시각.
     private(set) var blockedUntil: [String: Date] = [:]
+    /// registry에 등록되지 않은 service를 쓰는 계정 이름. 조회를 아예 시작하지 않고
+    /// UI가 "지원하지 않는 서비스"로 표시하게 한다.
+    private(set) var unsupportedServices: Set<String> = []
     var activeConfigDirs: Set<String> = []
 
-    @ObservationIgnored private let poller: AccountPoller
+    @ObservationIgnored private let registry: ServiceRegistry
     @ObservationIgnored private let baseInterval: TimeInterval
     @ObservationIgnored private var tasks: [String: Task<Void, Never>] = [:]
     // 계정별 캐시 상태(마지막 성공 사용량·시각, 조회 일시 제한 해제 시각). 디스크의
@@ -22,7 +25,7 @@ final class UsageViewModel {
     // Backoff는 모델에 두어 refreshAll()로 폴링 루프를 다시 시작해도 초기화되지 않게 한다(I3).
     @ObservationIgnored private var backoffs: [String: Backoff] = [:]
 
-    init(config: AppConfig, poller: AccountPoller, now: Date = .now) {
+    init(config: AppConfig, registry: ServiceRegistry, now: Date = .now) {
         accounts = config.accounts
         let interval = TimeInterval(max(30, config.pollIntervalSeconds))
         let loaded = UsageCache.load(now: now)
@@ -36,7 +39,7 @@ final class UsageViewModel {
         blockedUntil = loaded.compactMapValues { state in
             state.blockedUntil.flatMap { $0 > now ? $0 : nil }
         }
-        self.poller = poller
+        self.registry = registry
         baseInterval = interval
     }
 
@@ -52,10 +55,19 @@ final class UsageViewModel {
         activeConfigDirs.contains(KeychainService.normalize(account.configDir))
     }
 
+    func isUnsupported(_ account: Account) -> Bool {
+        unsupportedServices.contains(account.name)
+    }
+
     func start() {
         let now = Date.now
         for account in accounts {
-            startLoop(for: account, initialDelay: initialDelay(for: account, now: now))
+            guard let poller = registry.poller(for: account.service) else {
+                unsupportedServices.insert(account.name)
+                statuses[account.name] = .error
+                continue
+            }
+            startLoop(for: account, poller: poller, initialDelay: initialDelay(for: account, now: now))
         }
     }
 
@@ -63,10 +75,11 @@ final class UsageViewModel {
     func refreshAll() {
         let now = Date.now
         for account in accounts {
+            guard let poller = registry.poller(for: account.service) else { continue }
             guard PollSchedule.shouldRefresh(
                 now: now, blockedUntil: blockedUntil[account.name], lastPollStartedAt: lastPollStartedAt[account.name])
             else { continue }
-            startLoop(for: account)
+            startLoop(for: account, poller: poller)
         }
     }
 
@@ -76,7 +89,7 @@ final class UsageViewModel {
             now: now, lastSuccessAt: state?.lastSuccessAt, blockedUntil: state?.blockedUntil, interval: baseInterval)
     }
 
-    private func startLoop(for account: Account, initialDelay: TimeInterval = 0) {
+    private func startLoop(for account: Account, poller: AccountPoller, initialDelay: TimeInterval = 0) {
         tasks[account.name]?.cancel()
         tasks[account.name] = Task { [weak self] in
             var delay = initialDelay
@@ -86,12 +99,12 @@ final class UsageViewModel {
                     guard !Task.isCancelled else { return }
                 }
                 guard let self else { return }
-                delay = await self.pollOnce(account)
+                delay = await self.pollOnce(account, poller: poller)
             }
         }
     }
 
-    private func pollOnce(_ account: Account) async -> TimeInterval {
+    private func pollOnce(_ account: Account, poller: AccountPoller) async -> TimeInterval {
         lastPollStartedAt[account.name] = .now
         let previous = status(for: account)
         let outcome = await poller.poll(account, previous: previous)

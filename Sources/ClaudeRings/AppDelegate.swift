@@ -12,11 +12,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         let model = UsageViewModel(
             config: store.load(),
-            poller: AccountPoller(tokens: KeychainTokenProvider(), fetcher: UsageClient()))
+            registry: .claudeOnly())
         let store = store
         let loginItem = LoginItemModel()
+        let theme = ThemeStore()
         let menuBar = MenuBarController(
             model: model,
+            theme: theme,
             loginItem: loginItem,
             actions: RingsActions(
                 refresh: { [weak model] in model?.refreshAll() },

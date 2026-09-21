@@ -1,9 +1,10 @@
 import ClaudeRingsCore
 import SwiftUI
 
-/// 팝오버 내용: 계정별 이중 링 + 상세 정보, 하단에 새로고침·설정 열기·종료·로그인 시 자동 실행.
+/// 팝오버 내용: 계정별 Session·Weekly 게이지 + 상세 정보, 색상 설정, 하단 버튼.
 struct PopoverContentView: View {
     let model: UsageViewModel
+    let theme: ThemeStore
     let loginItem: LoginItemModel
     let actions: RingsActions
 
@@ -15,9 +16,15 @@ struct PopoverContentView: View {
                         account: account,
                         status: model.status(for: account),
                         isActive: model.isActive(account),
+                        isUnsupported: model.isUnsupported(account),
                         blockedUntil: model.blockedUntil(for: account),
-                        now: context.date)
+                        now: context.date,
+                        theme: theme)
                 }
+
+                Divider()
+
+                colorSection
 
                 Divider()
 
@@ -42,8 +49,31 @@ struct PopoverContentView: View {
                 .font(.system(size: 11, design: .rounded))
             }
             .padding(14)
-            .frame(width: 260)
+            .frame(width: 270)
         }
+    }
+
+    private var colorSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("색상")
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("기본값으로") { theme.resetToDefault() }
+                    .font(.system(size: 10, design: .rounded))
+            }
+            ColorPicker("여유", selection: Binding(
+                get: { Color(theme.colors.good) },
+                set: { theme.setGood($0) }))
+            ColorPicker("주의", selection: Binding(
+                get: { Color(theme.colors.warning) },
+                set: { theme.setWarning($0) }))
+            ColorPicker("경고", selection: Binding(
+                get: { Color(theme.colors.critical) },
+                set: { theme.setCritical($0) }))
+        }
+        .font(.system(size: 11, design: .rounded))
     }
 }
 
@@ -51,8 +81,10 @@ private struct PopoverAccountRow: View {
     let account: Account
     let status: AccountStatus
     let isActive: Bool
+    let isUnsupported: Bool
     let blockedUntil: Date?
     let now: Date
+    let theme: ThemeStore
 
     private var session: UsageWindow? { status.usage?.session }
     private var weekly: UsageWindow? { status.usage?.weekly }
@@ -65,167 +97,75 @@ private struct PopoverAccountRow: View {
     private var isBlocked: Bool { blockedUntil != nil }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            ZStack {
-                DualRing(
-                    outer: session?.remainingPercent,
-                    inner: weekly?.remainingPercent,
-                    isLoading: status == .loading,
-                    isDashed: status == .missing)
-                center
-            }
-            .frame(width: 40, height: 40)
-            .opacity(isStale ? 0.5 : 1)
-            .overlay(alignment: .topTrailing) {
-                if isBlocked, status.usage != nil {
-                    Image(systemName: "clock.fill")
-                        .font(.system(size: 8))
-                        .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 4) {
+                Text(account.name)
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                if isActive {
+                    Circle().fill(.tint).frame(width: 5, height: 5)
                 }
+                Spacer()
             }
 
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 4) {
-                    Text(account.name)
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                    if isActive {
-                        Circle().fill(.tint).frame(width: 5, height: 5)
+            if isUnsupported {
+                stateLabel("지원하지 않는 서비스: \(account.service.rawValue)")
+            } else {
+                switch status {
+                case .loading:
+                    stateLabel("불러오는 중…")
+                case .expired:
+                    stateLabel("만료")
+                case .missing:
+                    stateLabel("로그인 필요")
+                case .error:
+                    if let blockedUntil {
+                        stateLabel("조회 일시 제한 · \(ResetFormatter.string(until: blockedUntil, now: now)) 후 재시도")
+                    } else {
+                        stateLabel("오류")
                     }
-                }
-                detailRow(title: "Session", window: session)
-                detailRow(title: "Weekly", window: weekly)
-                if let blockedUntil {
-                    Text("조회 일시 제한 · \(ResetFormatter.string(until: blockedUntil, now: now)) 후 재시도")
-                        .font(.system(size: 9, design: .rounded))
-                        .foregroundStyle(.secondary)
+                case .ok, .stale:
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 16) {
+                            gaugeColumn(title: "Session", window: session)
+                            gaugeColumn(title: "Weekly", window: weekly)
+                        }
+                        .opacity(isStale ? 0.5 : 1)
+                        if let blockedUntil {
+                            stateLabel("조회 일시 제한 · \(ResetFormatter.string(until: blockedUntil, now: now)) 후 재시도")
+                        }
+                    }
                 }
             }
         }
-        .padding(8)
+        .padding(10)
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
-    @ViewBuilder
-    private var center: some View {
-        switch status {
-        case .loading:
-            EmptyView()
-        case .expired:
-            Text("만료")
-                .font(.system(size: 8, weight: .medium, design: .rounded))
-                .foregroundStyle(.secondary)
-        case .missing:
-            Text("로그인\n필요")
-                .font(.system(size: 7, weight: .medium, design: .rounded))
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.secondary)
-        case .error:
-            if let blockedUntil {
-                VStack(spacing: 1) {
-                    Image(systemName: "clock")
-                        .font(.system(size: 8, weight: .medium))
-                    Text(ResetFormatter.string(until: blockedUntil, now: now))
-                        .font(.system(size: 7, weight: .medium, design: .rounded))
-                }
-                .foregroundStyle(.secondary)
-            } else {
-                Image(systemName: "exclamationmark")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(.secondary)
-            }
-        case .ok, .stale:
-            VStack(spacing: 0) {
-                Text(session.map { "\($0.remainingPercent)" } ?? "—")
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                Text(weekly.map { "\($0.remainingPercent)" } ?? "—")
-                    .font(.system(size: 8, weight: .medium, design: .rounded))
-                    .foregroundStyle(.secondary)
-            }
-            .monospacedDigit()
-            .contentTransition(.numericText())
-        }
-    }
-
-    private func detailRow(title: String, window: UsageWindow?) -> some View {
-        detailRow(title: title, value: window?.resetsAt.map { "\(ResetFormatter.string(until: $0)) 후 리셋" } ?? "—")
-    }
-
-    private func detailRow(title: String, value: String) -> some View {
+    private func gaugeColumn(title: String, window: UsageWindow?) -> some View {
         HStack(spacing: 6) {
-            Text(title)
-                .font(.system(size: 10, design: .rounded))
-                .foregroundStyle(.secondary)
-                .frame(width: 44, alignment: .leading)
-            Text(value)
-                .font(.system(size: 10, design: .rounded))
-        }
-    }
-}
-
-/// 바깥 링 = Session, 안쪽 링 = Weekly. 팝오버와 메뉴바 콘텐츠 양쪽에서 재사용한다.
-struct DualRing: View {
-    let outer: Int?
-    let inner: Int?
-    let isLoading: Bool
-    let isDashed: Bool
-
-    @State private var pulse = false
-
-    var body: some View {
-        ringsContent
-            .animation(.spring(duration: 0.6), value: outer)
-            .animation(.spring(duration: 0.6), value: inner)
-            .onChange(of: isLoading) { _, loading in
-                // 로딩을 벗어나면 다음 로딩 진입 시 애니메이션이 다시 트리거되도록 리셋한다.
-                if !loading { pulse = false }
+            ServiceGaugeGlyph(
+                service: account.service,
+                percent: window?.remainingPercent,
+                color: theme.color(for: window?.remainingPercent),
+                size: 22)
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 3) {
+                    Text(title).foregroundStyle(.secondary)
+                    Text(window.map { "\($0.remainingPercent)%" } ?? "—")
+                        .fontWeight(.semibold)
+                }
+                Text(window?.resetsAt.map { "\(ResetFormatter.string(until: $0)) 후 리셋" } ?? "—")
+                    .foregroundStyle(.secondary)
             }
-    }
-
-    /// `.loading` 동안에만 존재하는 서브트리로 펄스를 격리한다. `isLoading`이 false가 되면
-    /// 이 서브트리(그리고 그 안의 `repeatForever` 애니메이션)가 통째로 제거되므로,
-    /// 로딩을 벗어난 뒤에도 펄스가 계속되거나 깜빡이는 문제가 생기지 않는다.
-    @ViewBuilder
-    private var ringsContent: some View {
-        let rings = ZStack {
-            ring(value: outer, lineWidth: 3.5).padding(1.5)
-            ring(value: inner, lineWidth: 3).padding(7)
-        }
-        if isLoading {
-            rings
-                .opacity(pulse ? 0.35 : 0.1)
-                .animation(.easeInOut(duration: 1).repeatForever(), value: pulse)
-                .onAppear { pulse = true }
-        } else {
-            rings
-                .opacity(1)
+            .font(.system(size: 10, design: .rounded))
         }
     }
 
-    private func ring(value: Int?, lineWidth: CGFloat) -> some View {
-        let color = RingLevel(remaining: value).color
-        let track = StrokeStyle(lineWidth: lineWidth, dash: isDashed ? [2, 3] : [])
-        return ZStack {
-            Circle()
-                .stroke(.white.opacity(0.15), style: track)
-            Circle()
-                .trim(from: 0, to: CGFloat(value ?? 0) / 100)
-                .stroke(
-                    AngularGradient(colors: [color.opacity(0.7), color], center: .center),
-                    style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-        }
-    }
-}
-
-extension RingLevel {
-    var color: Color {
-        switch self {
-        case .good: .green
-        case .warning: .yellow
-        case .critical: .red
-        case .unavailable: .gray
-        }
+    private func stateLabel(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 10, design: .rounded))
+            .foregroundStyle(.secondary)
     }
 }

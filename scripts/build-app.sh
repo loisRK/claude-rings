@@ -8,9 +8,13 @@ bin_dir="$(swift build -c release --show-bin-path)"
 
 app="build/ClaudeRings.app"
 rm -rf "$app"
-mkdir -p "$app/Contents/MacOS"
+mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$bin_dir/ClaudeRings" "$app/Contents/MacOS/ClaudeRings"
 cp Support/Info.plist "$app/Contents/Info.plist"
+# SwiftPM 리소스 번들(로고 에셋 등)을 Bundle.module이 찾는 Contents/Resources로 복사한다.
+if [[ -d "$bin_dir/ClaudeRings_ClaudeRings.bundle" ]]; then
+  cp -R "$bin_dir/ClaudeRings_ClaudeRings.bundle" "$app/Contents/Resources/"
+fi
 codesign --force --sign - "$app"
 echo "built: $app"
 
