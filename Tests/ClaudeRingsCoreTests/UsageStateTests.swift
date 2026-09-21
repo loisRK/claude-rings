@@ -57,7 +57,7 @@ struct UsageStateTests {
         (20, "1m"),
         (0, "곧"),
         (-100, "곧"),
-    ])
+    ] as [(Int, String)])
     func resetFormatting(seconds: Int, expected: String) {
         let now = Date(timeIntervalSince1970: 1_000_000)
         #expect(ResetFormatter.string(until: now.addingTimeInterval(TimeInterval(seconds)), now: now) == expected)
