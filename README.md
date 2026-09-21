@@ -7,7 +7,7 @@ macOS 앱입니다. 설계는 [docs/DESIGN.md](docs/DESIGN.md)를 참고하세�
 
 이 프로젝트는 **Anthropic과 무관한 비공식 도구**입니다. "Claude"와 Claude 로고는
 Anthropic의 상표이며, 이 앱에서는 계정별 잔여율 게이지를 그리는 용도로만 씁니다
-(자세한 출처는 [Sources/ClaudeRings/Resources/logos/README.md](Sources/ClaudeRings/Resources/logos/README.md) 참고).
+(자세한 출처는 [Sources/ClaudeRings/Resources/README.md](Sources/ClaudeRings/Resources/README.md) 참고).
 
 ## 왜 만들었나
 

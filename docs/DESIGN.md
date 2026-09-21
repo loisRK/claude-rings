@@ -89,7 +89,7 @@ Claude Code는 config 디렉터리마다 OAuth 인증 정보를 **별도의 macO
 {
   "accounts": [
     { "name": "main", "service": "claude", "configDir": "~/.claude" },
-    { "name": "****", "service": "claude", "configDir": "~/.claude/****" }
+    { "name": "work", "service": "claude", "configDir": "~/.claude/work" }
   ],
   "pollIntervalSeconds": 180
 }
@@ -145,7 +145,8 @@ Claude Code는 config 디렉터리마다 OAuth 인증 정보를 **별도의 macO
 
 ### 표시 값
 - **남은 % = 100 − utilization**입니다(기존 상용 앱의 "76% left"와 같은 기준).
-- 바깥 링은 Session(5시간), 안쪽 링은 Weekly(주간)입니다.
+- Session(5시간)과 Weekly(주간)는 각각 별도의 게이지입니다(팝오버). 메뉴바의 게이지
+  하나는 그중 더 급한(낮은) 잔여율을 기준으로 채웁니다(§6 참고).
 
 ## 5. 실행 수명 주기
 
@@ -276,7 +277,7 @@ claude-work() { claude_rings_run ~/.claude/work "$@"; }
 | 상황 | 처리 |
 |---|---|
 | 401 Unauthorized | Keychain을 다시 읽어 1회 재시도하고, 실패하면 `expired`로 표시 |
-| 429 Too Many Requests | 이전 값을 유지(`stale`, 없으면 `error`)하고 백오프. `Retry-After` 헤더가 있으면 그 시간(최대 2시간)까지 조회하지 않고, 위젯에 "조회 일시 제한"(🕐 + 남은 시간)을 표시함. **Claude 사용 한도 초과가 아니라 사용량 조회 API의 호출 제한**임을 구분해 보여줌 |
+| 429 Too Many Requests | 이전 값을 유지(`stale`, 없으면 `error`)하고 백오프. `Retry-After` 헤더가 있으면 그 시간(최대 2시간)까지 조회하지 않고, 메뉴바에 "조회 일시 제한"(clock 아이콘 + 남은 시간)을 표시함. **Claude 사용 한도 초과가 아니라 사용량 조회 API의 호출 제한**임을 구분해 보여줌 |
 | 네트워크 오류·타임아웃(10초) | 이전 값을 유지(`stale`)하고 백오프 |
 | 응답 스키마 불일치 | 필드별 옵셔널 파싱. 없는 필드는 "—"로 표시 |
 | Keychain 접근 거부 | `missing`으로 표시. macOS 허용 창이 뜨면 "항상 허용"을 선택하도록 README에 안내 |
@@ -309,7 +310,7 @@ claude-rings/
 │       ├── LoginItemModel.swift    # SMAppService 래핑
 │       ├── MenuBarController.swift # NSStatusItem + NSPopover
 │       ├── MenuBarContentView.swift # 메뉴바 항목 SwiftUI 콘텐츠
-│       ├── RingsView.swift         # 팝오버 SwiftUI 콘텐츠 + Liquid Glass
+│       ├── PopoverView.swift       # 팝오버 SwiftUI 콘텐츠 + Liquid Glass
 │       ├── ServiceGaugeGlyph.swift # 로고를 잔여율만큼 채우는 게이지, 로고 조회
 │       ├── FallbackGlyph.swift     # 로고 없는 서비스용 중립 대체 도형
 │       └── Resources/logos/        # 서비스별 로고 PNG(`<service-id>.png`)
@@ -341,6 +342,6 @@ Swift Testing(`import Testing`)으로 `ClaudeRingsCore`를 단위 테스트합�
 
 1. **API 검증**: 실제 사용량 API 응답을 확인하고 샘플을 픽스처로 저장(토큰은 마스킹)
 2. Core 모듈을 TDD로 구현
-3. 패널과 Liquid Glass UI
+3. 메뉴바 항목 + 팝오버(Liquid Glass) UI
 4. 빌드 스크립트와 `.app` 번들
 5. 셸 함수 적용(`~/.zshrc` 수정은 사용자 확인 후)

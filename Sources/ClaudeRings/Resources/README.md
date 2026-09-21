@@ -1,7 +1,12 @@
 # 서비스 로고 에셋
 
-파일명은 `ServiceID.rawValue`와 같다(`claude.png` → `ServiceID.claude`). 새 서비스를 추가하면
-`<service-id>.png`를 여기 추가한다. 없으면 중립 대체 도형(`FallbackGlyph`)이 대신 쓰인다.
+이 문서는 `logos/`가 아니라 한 단계 위(`Resources/`)에 둔다. `Package.swift`가
+`Resources/logos`만 리소스로 등록하므로(`.copy`), `logos/` 안에 있는 파일은 전부
+앱 번들에 그대로 들어간다 — 이 문서를 번들에 넣지 않으려고 일부러 밖에 뒀다.
+
+파일명은 `ServiceID.rawValue`와 같다(`logos/claude.png` → `ServiceID.claude`). 새 서비스를
+추가하면 `logos/<service-id>.png`를 추가한다. 없으면 중립 대체 도형(`FallbackGlyph`)이
+대신 쓰인다.
 
 ## claude.png
 
