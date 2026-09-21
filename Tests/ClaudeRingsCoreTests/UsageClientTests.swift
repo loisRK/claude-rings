@@ -70,4 +70,10 @@ struct UsageClientTests {
         let result = UsageClient.interpret(status: 429, data: Data(), retryAfter: "3.5")
         #expect(result == .rateLimited(retryAfter: nil))
     }
+
+    @Test(arguments: ["0", "-5"])
+    func rateLimitedWithNonPositiveRetryAfterIsNil(retryAfter: String) {
+        let result = UsageClient.interpret(status: 429, data: Data(), retryAfter: retryAfter)
+        #expect(result == .rateLimited(retryAfter: nil))
+    }
 }
