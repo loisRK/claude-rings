@@ -6,3 +6,4 @@ DerivedData/
 /build/
 *.app/
 .DS_Store
+.superpowers/
