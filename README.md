@@ -63,6 +63,7 @@ claude-rings는 설정한 **모든 config 디렉터리**의 사용량을 조회�
 
 - Keychain의 토큰은 **읽기만** 하며 갱신하거나 쓰지 않습니다.
 - 토큰은 메모리에 캐싱하지 않고, 로그에도 남기지 않습니다.
+- 사용량 API 요청은 디스크 캐시·쿠키를 쓰지 않는 ephemeral `URLSession`으로 보내므로, 토큰이 담긴 HTTP 응답이 디스크에 남지 않습니다.
 - 최근 성공한 사용량 수치(토큰 아님)는 `~/Library/Caches/claude-rings/last-usage.json`에 캐시되며, 재시작 후 새로 조회할 때까지 연하게 표시됩니다.
 - macOS가 Keychain 접근을 물으면 **항상 허용**을 선택하세요.
 
