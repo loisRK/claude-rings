@@ -101,8 +101,18 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
     /// 팝오버가 닫히면(바깥 클릭, 다시 클릭, ESC 등 어떤 이유든) 원래 맨 앞에 있던
     /// 앱으로 포커스를 돌려준다. `NSApp.activate()`로 우리 앱을 활성화한 뒤라 그냥
     /// 두면 사용자가 보던 창이 뒤로 밀린 채 남기 때문이다.
+    ///
+    /// 단, 팝오버가 열려 있는 동안 사용자가 Cmd+Tab 등으로 이미 다른 앱(AppB)으로
+    /// 포커스를 옮겼다면(그 전환 자체가 팝오버를 닫히게 함) 여기서 원래 앱(AppA)을
+    /// 강제로 앞에 세우면 사용자의 그 전환을 덮어써 버린다. 그래서 "지금도 여전히
+    /// 우리 앱이 맨 앞인지"를 닫히는 시점에 다시 확인해서, 우리가 맨 앞일 때만
+    /// 되돌린다 — 우리가 아니라면 사용자가 이미 다른 곳으로 옮긴 것이므로 그대로 둔다.
     func popoverDidClose(_ notification: Notification) {
-        previousApp?.activate(options: [])
-        previousApp = nil
+        defer { previousApp = nil }
+        guard let previousApp, previousApp.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return }
+        guard NSWorkspace.shared.frontmostApplication?.processIdentifier
+            == ProcessInfo.processInfo.processIdentifier
+        else { return }
+        previousApp.activate(options: [])
     }
 }
