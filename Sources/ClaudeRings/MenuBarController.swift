@@ -39,9 +39,15 @@ final class MenuBarController: NSObject {
             statusItem.length = hosting.fittingSize.width
         }
 
-        popover.behavior = .transient
-        popover.contentViewController = NSHostingController(
+        let popoverController = NSHostingController(
             rootView: PopoverContentView(model: model, theme: theme, loginItem: loginItem, actions: actions))
+        // NSHostingController는 기본적으로 preferredContentSize를 SwiftUI 콘텐츠에 맞춰
+        // 갱신하지 않는다. 이 옵션을 켜야 NSPopover가 실제 콘텐츠 높이대로 창을 잡고,
+        // 계정이 늘거나 조회 일시 제한 문구가 붙어 콘텐츠가 커져도 다시 반영된다
+        // (안 켜두면 팝오버가 예전/기본 크기로 고정돼 위쪽 내용이 잘려 보인다).
+        popoverController.sizingOptions = [.preferredContentSize]
+        popover.behavior = .transient
+        popover.contentViewController = popoverController
 
         statusItem.button?.target = self
         statusItem.button?.action = #selector(togglePopover)

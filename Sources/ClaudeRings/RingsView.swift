@@ -1,3 +1,4 @@
+import AppKit
 import ClaudeRingsCore
 import SwiftUI
 
@@ -8,19 +9,32 @@ struct PopoverContentView: View {
     let loginItem: LoginItemModel
     let actions: RingsActions
 
+    /// 계정 목록이 화면 높이의 70%를 넘어설 만큼 길어지면(계정이 많거나 조회 일시
+    /// 제한 문구가 붙어 카드가 커지는 경우) 그 구간만 스크롤되게 하고, 색상 설정·
+    /// 로그인 시 자동 실행·하단 버튼은 항상 아래에 고정해서 보이게 한다.
+    private var maxAccountListHeight: CGFloat {
+        (NSScreen.main?.visibleFrame.height ?? 800) * 0.7
+    }
+
     var body: some View {
         TimelineView(.periodic(from: .now, by: 30)) { context in
             VStack(alignment: .leading, spacing: 10) {
-                ForEach(model.accounts) { account in
-                    PopoverAccountRow(
-                        account: account,
-                        status: model.status(for: account),
-                        isActive: model.isActive(account),
-                        isUnsupported: model.isUnsupported(account),
-                        blockedUntil: model.blockedUntil(for: account),
-                        now: context.date,
-                        theme: theme)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(model.accounts) { account in
+                            PopoverAccountRow(
+                                account: account,
+                                status: model.status(for: account),
+                                isActive: model.isActive(account),
+                                isUnsupported: model.isUnsupported(account),
+                                blockedUntil: model.blockedUntil(for: account),
+                                now: context.date,
+                                theme: theme)
+                        }
+                    }
                 }
+                .frame(maxHeight: maxAccountListHeight)
+                .fixedSize(horizontal: false, vertical: true)
 
                 Divider()
 
