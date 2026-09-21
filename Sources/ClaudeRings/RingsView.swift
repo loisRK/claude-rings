@@ -1,62 +1,58 @@
 import ClaudeRingsCore
 import SwiftUI
 
-struct RingsView: View {
+/// 팝오버 내용: 계정별 이중 링 + 상세 정보, 하단에 새로고침·설정 열기·종료·로그인 시 자동 실행.
+struct PopoverContentView: View {
     let model: UsageViewModel
+    let loginItem: LoginItemModel
     let actions: RingsActions
-    let onSizeChange: @MainActor (CGSize) -> Void
-
-    @State private var hovered: String?
-    @Namespace private var glassNamespace
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 30)) { context in
-            GlassEffectContainer(spacing: 8) {
-                HStack(alignment: .top, spacing: 8) {
-                    ForEach(model.accounts) { account in
-                        AccountBubble(
-                            account: account,
-                            status: model.status(for: account),
-                            isActive: model.isActive(account),
-                            isExpanded: hovered == account.name,
-                            blockedUntil: model.blockedUntil(for: account),
-                            now: context.date,
-                            namespace: glassNamespace)
-                        .onHover { inside in
-                            withAnimation(.spring(duration: 0.35)) {
-                                if inside {
-                                    hovered = account.name
-                                } else if hovered == account.name {
-                                    hovered = nil
-                                }
-                            }
-                        }
-                    }
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(model.accounts) { account in
+                    PopoverAccountRow(
+                        account: account,
+                        status: model.status(for: account),
+                        isActive: model.isActive(account),
+                        blockedUntil: model.blockedUntil(for: account),
+                        now: context.date)
                 }
-            }
-            .padding(8)
-            .fixedSize()
-            .gesture(WindowDragGesture())
-            .contextMenu {
-                Button("지금 새로고침", action: actions.refresh)
-                Button("위치 초기화", action: actions.resetPosition)
-                Button("설정 파일 열기", action: actions.openConfig)
+
                 Divider()
-                Button("종료", action: actions.quit)
+
+                Toggle("로그인 시 자동 실행", isOn: Binding(
+                    get: { loginItem.isEnabled },
+                    set: { loginItem.setEnabled($0) }))
+                    .font(.system(size: 11, design: .rounded))
+                    .toggleStyle(.checkbox)
+
+                if let error = loginItem.lastError {
+                    Text(error)
+                        .font(.system(size: 9, design: .rounded))
+                        .foregroundStyle(.red)
+                }
+
+                HStack {
+                    Button("새로고침", action: actions.refresh)
+                    Button("설정 열기", action: actions.openConfig)
+                    Spacer()
+                    Button("종료", action: actions.quit)
+                }
+                .font(.system(size: 11, design: .rounded))
             }
-            .onGeometryChange(for: CGSize.self) { $0.size } action: { onSizeChange($0) }
+            .padding(14)
+            .frame(width: 260)
         }
     }
 }
 
-private struct AccountBubble: View {
+private struct PopoverAccountRow: View {
     let account: Account
     let status: AccountStatus
     let isActive: Bool
-    let isExpanded: Bool
     let blockedUntil: Date?
     let now: Date
-    let namespace: Namespace.ID
 
     private var session: UsageWindow? { status.usage?.session }
     private var weekly: UsageWindow? { status.usage?.weekly }
@@ -69,49 +65,46 @@ private struct AccountBubble: View {
     private var isBlocked: Bool { blockedUntil != nil }
 
     var body: some View {
-        VStack(spacing: 6) {
-            HStack(spacing: 7) {
-                ZStack {
-                    DualRing(
-                        outer: session?.remainingPercent,
-                        inner: weekly?.remainingPercent,
-                        isLoading: status == .loading,
-                        isDashed: status == .missing)
-                    center
+        HStack(alignment: .top, spacing: 10) {
+            ZStack {
+                DualRing(
+                    outer: session?.remainingPercent,
+                    inner: weekly?.remainingPercent,
+                    isLoading: status == .loading,
+                    isDashed: status == .missing)
+                center
+            }
+            .frame(width: 40, height: 40)
+            .opacity(isStale ? 0.5 : 1)
+            .overlay(alignment: .topTrailing) {
+                if isBlocked, status.usage != nil {
+                    Image(systemName: "clock.fill")
+                        .font(.system(size: 8))
+                        .foregroundStyle(.secondary)
                 }
-                .frame(width: 40, height: 40)
-                .overlay(alignment: .center) {
-                    if isBlocked, status.usage != nil {
-                        // 캡슐 glassEffect가 이 프레임을 원형으로 클리핑하므로, 링의
-                        // 우상단 호 안쪽(중심에서 약간 벗어난 지점)에 배지를 둬 잘리지 않게 한다.
-                        Image(systemName: "clock.fill")
-                            .font(.system(size: 8))
-                            .foregroundStyle(.secondary)
-                            .offset(x: 11, y: -11)
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 4) {
+                    Text(account.name)
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    if isActive {
+                        Circle().fill(.tint).frame(width: 5, height: 5)
                     }
                 }
-
-                if isExpanded {
-                    details
-                        .transition(.opacity.combined(with: .move(edge: .trailing)))
+                detailRow(title: "Session", window: session)
+                detailRow(title: "Weekly", window: weekly)
+                if let blockedUntil {
+                    Text("조회 일시 제한 · \(ResetFormatter.string(until: blockedUntil, now: now)) 후 재시도")
+                        .font(.system(size: 9, design: .rounded))
+                        .foregroundStyle(.secondary)
                 }
             }
-            .padding(3)
-            .opacity(isStale ? 0.5 : 1)
-            .glassEffect(.regular.interactive(), in: .capsule)
-            .glassEffectID(account.name, in: namespace)
-
-            HStack(spacing: 3) {
-                Text(account.name)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                if isActive {
-                    Circle().fill(.tint).frame(width: 3, height: 3)
-                }
-            }
-            .font(.system(size: 9, weight: isActive ? .semibold : .regular, design: .rounded))
-            .foregroundStyle(isActive ? .primary : .secondary)
         }
+        .padding(8)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     @ViewBuilder
@@ -155,19 +148,6 @@ private struct AccountBubble: View {
         }
     }
 
-    private var details: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            detailRow(title: "Session", window: session)
-            detailRow(title: "Weekly", window: weekly)
-            if let blockedUntil {
-                detailRow(title: "조회", value: "일시 제한 · \(ResetFormatter.string(until: blockedUntil, now: now)) 후 재시도")
-            }
-        }
-        .font(.system(size: 10, design: .rounded))
-        .padding(.trailing, 7)
-        .fixedSize()
-    }
-
     private func detailRow(title: String, window: UsageWindow?) -> some View {
         detailRow(title: title, value: window?.resetsAt.map { "\(ResetFormatter.string(until: $0)) 후 리셋" } ?? "—")
     }
@@ -175,14 +155,17 @@ private struct AccountBubble: View {
     private func detailRow(title: String, value: String) -> some View {
         HStack(spacing: 6) {
             Text(title)
+                .font(.system(size: 10, design: .rounded))
                 .foregroundStyle(.secondary)
                 .frame(width: 44, alignment: .leading)
             Text(value)
+                .font(.system(size: 10, design: .rounded))
         }
     }
 }
 
-private struct DualRing: View {
+/// 바깥 링 = Session, 안쪽 링 = Weekly. 팝오버와 메뉴바 콘텐츠 양쪽에서 재사용한다.
+struct DualRing: View {
     let outer: Int?
     let inner: Int?
     let isLoading: Bool
@@ -236,7 +219,7 @@ private struct DualRing: View {
     }
 }
 
-private extension RingLevel {
+extension RingLevel {
     var color: Color {
         switch self {
         case .good: .green
