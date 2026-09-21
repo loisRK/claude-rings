@@ -16,10 +16,14 @@ struct RingsActions {
 /// `@Observable`이라 값이 바뀌면 이 서브뷰가 자동으로 다시 그려지므로 별도 타이머로
 /// 다시 그릴 필요가 없다.
 @MainActor
-final class MenuBarController: NSObject {
+final class MenuBarController: NSObject, NSPopoverDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let popover = NSPopover()
     private let loginItem: LoginItemModel
+    /// 팝오버를 열기 직전까지 맨 앞에 있던 앱. 팝오버가 닫히면 이 앱으로 포커스를
+    /// 돌려준다(우리 앱은 accessory라 Dock 아이콘이 없고, 사용자가 원래 보던 창을
+    /// 방해하지 않아야 하기 때문).
+    private var previousApp: NSRunningApplication?
 
     init(model: UsageViewModel, theme: ThemeStore, loginItem: LoginItemModel, actions: RingsActions) {
         self.loginItem = loginItem
@@ -59,6 +63,7 @@ final class MenuBarController: NSObject {
         // 여전히 닫힌다.
         popover.behavior = .semitransient
         popover.contentViewController = popoverController
+        popover.delegate = self
 
         statusItem.button?.target = self
         statusItem.button?.action = #selector(togglePopover)
@@ -81,7 +86,23 @@ final class MenuBarController: NSObject {
         guard let button = statusItem.button else { return }
         // 시스템 설정에서 로그인 항목을 직접 바꿨을 수 있으니 열 때마다 최신 상태로 갱신한다.
         loginItem.refresh()
+
+        // 앱이 .accessory(LSUIElement)라 활성화된 적이 없으면 팝오버 창이 key가 되지
+        // 않아 ColorPicker를 눌러도 NSColorPanel이 열리지 않는다(검증 중 재현·확인).
+        // 활성화해야 팝오버가 실제로 key window가 된다. Dock 아이콘은 activationPolicy가
+        // 그대로 .accessory라 여전히 뜨지 않는다.
+        previousApp = NSWorkspace.shared.frontmostApplication
+        NSApp.activate()
+
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         popover.contentViewController?.view.window?.makeKey()
+    }
+
+    /// 팝오버가 닫히면(바깥 클릭, 다시 클릭, ESC 등 어떤 이유든) 원래 맨 앞에 있던
+    /// 앱으로 포커스를 돌려준다. `NSApp.activate()`로 우리 앱을 활성화한 뒤라 그냥
+    /// 두면 사용자가 보던 창이 뒤로 밀린 채 남기 때문이다.
+    func popoverDidClose(_ notification: Notification) {
+        previousApp?.activate(options: [])
+        previousApp = nil
     }
 }
