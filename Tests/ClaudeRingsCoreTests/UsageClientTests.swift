@@ -13,6 +13,20 @@ struct UsageClientTests {
         #expect(request.timeoutInterval == 10)
     }
 
+    @Test func requestIgnoresLocalCache() {
+        let request = UsageClient.makeRequest(token: "tok")
+        #expect(request.cachePolicy == .reloadIgnoringLocalCacheData)
+    }
+
+    @Test func makeSessionHasNoDiskCacheOrCookies() {
+        let session = UsageClient.makeSession()
+        let config = session.configuration
+        #expect(config.urlCache == nil)
+        #expect(config.requestCachePolicy == .reloadIgnoringLocalCacheData)
+        #expect(config.httpCookieStorage == nil)
+        #expect(config.httpShouldSetCookies == false)
+    }
+
     @Test func okWithValidBody() {
         let result = UsageClient.interpret(status: 200, data: Data(sampleUsageJSON.utf8))
         guard case .ok(let usage) = result else {

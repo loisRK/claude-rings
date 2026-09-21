@@ -16,12 +16,23 @@ public struct UsageClient: UsageFetching {
 
     private let session: URLSession
 
-    public init(session: URLSession = .shared) {
+    public init(session: URLSession = UsageClient.makeSession()) {
         self.session = session
     }
 
+    /// 토큰이 담긴 응답이 디스크에 남지 않도록 캐시·쿠키를 전부 끈 세션을 만든다.
+    public static func makeSession() -> URLSession {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.urlCache = nil
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        configuration.httpCookieStorage = nil
+        configuration.httpShouldSetCookies = false
+        return URLSession(configuration: configuration)
+    }
+
     public static func makeRequest(token: String) -> URLRequest {
-        var request = URLRequest(url: endpoint, timeoutInterval: 10)
+        var request = URLRequest(
+            url: endpoint, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 10)
         request.httpMethod = "GET"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
