@@ -19,12 +19,17 @@ struct RingsActions {
 final class MenuBarController: NSObject {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let popover = NSPopover()
+    private let loginItem: LoginItemModel
 
     init(model: UsageViewModel, theme: ThemeStore, loginItem: LoginItemModel, actions: RingsActions) {
+        self.loginItem = loginItem
         super.init()
 
         if let button = statusItem.button {
-            let hosting = NSHostingView(rootView: MenuBarContentView(model: model, theme: theme))
+            let hosting = NSHostingView(
+                rootView: MenuBarContentView(model: model, theme: theme, onWidthChange: { [weak self] width in
+                    self?.updateStatusItemWidth(width)
+                }))
             hosting.translatesAutoresizingMaskIntoConstraints = false
             button.addSubview(hosting)
             NSLayoutConstraint.activate([
@@ -34,8 +39,10 @@ final class MenuBarController: NSObject {
                 hosting.bottomAnchor.constraint(equalTo: button.bottomAnchor),
             ])
             // .variableLength는 버튼 안 커스텀 SwiftUI 서브뷰의 크기를 자동으로 반영하지
-            // 않으므로, 콘텐츠의 적정 너비를 계산해 아이템 길이로 직접 설정한다. 계정
-            // 목록은 시작 시 1회만 로드되어 실행 중 바뀌지 않으므로 한 번만 계산하면 된다.
+            // 않으므로 초기값을 직접 잡아 둔다. 실제 지속적인 갱신은 onWidthChange로
+            // 한다 — 캐시 없이 시작하면 "—"만 보이다가 숫자가 채워지거나, 조회 일시
+            // 제한으로 시계+남은 시간 문구가 붙는 등 텍스트 폭 자체가 실행 중 바뀌기
+            // 때문에(검증 중 발견) 한 번만 재는 것으로는 잘릴 수 있다.
             statusItem.length = hosting.fittingSize.width
         }
 
@@ -46,11 +53,20 @@ final class MenuBarController: NSObject {
         // 계정이 늘거나 조회 일시 제한 문구가 붙어 콘텐츠가 커져도 다시 반영된다
         // (안 켜두면 팝오버가 예전/기본 크기로 고정돼 위쪽 내용이 잘려 보인다).
         popoverController.sizingOptions = [.preferredContentSize]
-        popover.behavior = .transient
+        // .transient면 NSColorPanel(색상 설정의 ColorPicker가 여는 창)이 키 윈도우가
+        // 되는 순간 팝오버가 바깥 클릭으로 오인해 닫혀 버려 색상 편집을 쓸 수 없다.
+        // .semitransient는 그런 보조 창이 떠 있는 동안은 안 닫히면서도, 바깥을 클릭하면
+        // 여전히 닫힌다.
+        popover.behavior = .semitransient
         popover.contentViewController = popoverController
 
         statusItem.button?.target = self
         statusItem.button?.action = #selector(togglePopover)
+    }
+
+    private func updateStatusItemWidth(_ width: CGFloat) {
+        guard width > 0, abs(statusItem.length - width) > 0.5 else { return }
+        statusItem.length = width
     }
 
     @objc private func togglePopover() {
@@ -63,6 +79,8 @@ final class MenuBarController: NSObject {
 
     private func showPopover() {
         guard let button = statusItem.button else { return }
+        // 시스템 설정에서 로그인 항목을 직접 바꿨을 수 있으니 열 때마다 최신 상태로 갱신한다.
+        loginItem.refresh()
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         popover.contentViewController?.view.window?.makeKey()
     }

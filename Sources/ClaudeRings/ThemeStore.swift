@@ -25,17 +25,17 @@ final class ThemeStore {
     }
 
     func setGood(_ color: Color) {
-        colors.good = RGBAColor(color)
+        colors.good = RGBAColor(color, fallback: LevelColors.default.good)
         persist()
     }
 
     func setWarning(_ color: Color) {
-        colors.warning = RGBAColor(color)
+        colors.warning = RGBAColor(color, fallback: LevelColors.default.warning)
         persist()
     }
 
     func setCritical(_ color: Color) {
-        colors.critical = RGBAColor(color)
+        colors.critical = RGBAColor(color, fallback: LevelColors.default.critical)
         persist()
     }
 
@@ -72,8 +72,14 @@ extension Color {
 }
 
 extension RGBAColor {
-    init(_ color: Color) {
-        let resolved = NSColor(color).usingColorSpace(.sRGB) ?? NSColor(color)
+    /// sRGB로 변환할 수 없는 `Color`(패턴 색 등, `ColorPicker`에서는 사실상 나오지
+    /// 않지만 방어적으로 처리)는 `redComponent` 등을 읽으면 ObjC 예외로 죽을 수 있어
+    /// 그 프로퍼티들을 아예 건드리지 않고 `fallback`으로 대체한다.
+    init(_ color: Color, fallback: RGBAColor) {
+        guard let resolved = NSColor(color).usingColorSpace(.sRGB) else {
+            self = fallback
+            return
+        }
         self.init(
             red: Double(resolved.redComponent), green: Double(resolved.greenComponent),
             blue: Double(resolved.blueComponent), alpha: Double(resolved.alphaComponent))

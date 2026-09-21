@@ -48,6 +48,18 @@ struct PopoverContentView: View {
                     .font(.system(size: 11, design: .rounded))
                     .toggleStyle(.checkbox)
 
+                // register()는 예외 없이 성공해도 상태가 곧바로 .enabled가 되지 않고
+                // 시스템 설정에서 사용자 승인을 한 번 더 요구할 수 있다(.requiresApproval).
+                // 그 경우 체크박스가 이유 없이 꺼진 것처럼 보이므로 안내와 바로가기를 둔다.
+                if loginItem.needsApproval {
+                    HStack(spacing: 4) {
+                        Text("시스템 설정에서 승인이 필요합니다")
+                            .foregroundStyle(.secondary)
+                        Button("설정 열기") { loginItem.openSystemSettings() }
+                    }
+                    .font(.system(size: 9, design: .rounded))
+                }
+
                 if let error = loginItem.lastError {
                     Text(error)
                         .font(.system(size: 9, design: .rounded))
@@ -79,13 +91,13 @@ struct PopoverContentView: View {
             }
             ColorPicker("여유", selection: Binding(
                 get: { Color(theme.colors.good) },
-                set: { theme.setGood($0) }))
+                set: { theme.setGood($0) }), supportsOpacity: false)
             ColorPicker("주의", selection: Binding(
                 get: { Color(theme.colors.warning) },
-                set: { theme.setWarning($0) }))
+                set: { theme.setWarning($0) }), supportsOpacity: false)
             ColorPicker("경고", selection: Binding(
                 get: { Color(theme.colors.critical) },
-                set: { theme.setCritical($0) }))
+                set: { theme.setCritical($0) }), supportsOpacity: false)
         }
         .font(.system(size: 11, design: .rounded))
     }
