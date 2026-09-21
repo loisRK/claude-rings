@@ -33,7 +33,9 @@ public struct AccountPoller: Sendable {
 
         var result = await fetcher.fetch(token: token)
         // Claude Code가 그 사이 토큰을 갱신했을 수 있으므로 Keychain을 다시 읽어 한 번만 재시도한다.
-        if result == .unauthorized, let refreshed = try? tokens.accessToken(for: account) {
+        // 재조회한 토큰이 원래 토큰과 같으면(즉 갱신되지 않았으면) 다시 호출해 봐야 결과가
+        // 같을 것이므로 재시도하지 않는다.
+        if result == .unauthorized, let refreshed = try? tokens.accessToken(for: account), refreshed != token {
             result = await fetcher.fetch(token: refreshed)
         }
 

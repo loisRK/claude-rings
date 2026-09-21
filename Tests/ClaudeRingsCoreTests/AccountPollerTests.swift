@@ -77,13 +77,34 @@ struct AccountPollerTests {
     }
 
     @Test func unauthorizedTwiceIsExpired() async {
+        // 재조회한 토큰이 원래 토큰과 같으면 다시 fetch하지 않는다.
         let fetcher = StubFetcher([.unauthorized])
         let poller = AccountPoller(tokens: StubTokens([.success("t")]), fetcher: fetcher)
 
         let outcome = await poller.poll(account, previous: .ok(usage))
 
         #expect(outcome == PollOutcome(status: .expired, transientFailure: false))
-        #expect(fetcher.tokensSeen.count == 2)
+        #expect(fetcher.tokensSeen == ["t"])
+    }
+
+    @Test func unauthorizedWithRefreshedTokenReadFailureDoesNotRetry() async {
+        let tokens = StubTokens([.success("old"), .failure(.accessDenied)])
+        let fetcher = StubFetcher([.unauthorized])
+        let poller = AccountPoller(tokens: tokens, fetcher: fetcher)
+
+        let outcome = await poller.poll(account, previous: .ok(usage))
+
+        #expect(outcome == PollOutcome(status: .expired, transientFailure: false))
+        #expect(fetcher.tokensSeen == ["old"])
+        #expect(tokens.calls == 2)
+    }
+
+    @Test func failedReportsTransientFailure() async {
+        let poller = AccountPoller(tokens: StubTokens([.success("t")]), fetcher: StubFetcher([.failed]))
+
+        let outcome = await poller.poll(account, previous: .ok(usage))
+
+        #expect(outcome == PollOutcome(status: .stale(usage), transientFailure: true))
     }
 
     @Test func rateLimitedKeepsStaleAndReportsTransientFailure() async {
