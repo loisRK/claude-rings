@@ -60,9 +60,16 @@ public struct AccountStore: Sendable {
             return .default
         }
         guard let data = try? Data(contentsOf: fileURL),
-              let config = try? JSONDecoder().decode(AppConfig.self, from: data),
+              var config = try? JSONDecoder().decode(AppConfig.self, from: data),
               !config.accounts.isEmpty
         else { return .default }
+        config.accounts = Self.dedupingByName(config.accounts)
         return config
+    }
+
+    /// 이름이 같은 계정이 여러 개면 처음 나온 것만 남긴다.
+    private static func dedupingByName(_ accounts: [Account]) -> [Account] {
+        var seen = Set<String>()
+        return accounts.filter { seen.insert($0.name).inserted }
     }
 }

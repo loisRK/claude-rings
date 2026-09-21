@@ -40,4 +40,23 @@ struct AccountStoreTests {
 
         #expect(AccountStore(fileURL: fileURL).load() == .default)
     }
+
+    @Test func duplicateAccountNamesKeepFirstOccurrence() throws {
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let json = #"""
+        {"accounts":[
+            {"name":"work","configDir":"~/.claude/work"},
+            {"name":"main","configDir":"~/.claude"},
+            {"name":"work","configDir":"~/.claude/work2"}
+        ]}
+        """#
+        try Data(json.utf8).write(to: fileURL)
+
+        let config = AccountStore(fileURL: fileURL).load()
+
+        #expect(config.accounts == [
+            Account(name: "work", configDir: "~/.claude/work"),
+            Account(name: "main", configDir: "~/.claude"),
+        ])
+    }
 }
