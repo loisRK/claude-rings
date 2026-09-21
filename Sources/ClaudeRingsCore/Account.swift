@@ -3,11 +3,21 @@ import Foundation
 public struct Account: Codable, Equatable, Hashable, Identifiable, Sendable {
     public var name: String
     public var configDir: String
+    public var service: ServiceID
     public var id: String { name }
 
-    public init(name: String, configDir: String) {
+    public init(name: String, configDir: String, service: ServiceID = .claude) {
         self.name = name
         self.configDir = configDir
+        self.service = service
+    }
+
+    /// 기존 `accounts.json`(=`service` 필드가 없는 파일)도 계속 읽히도록, 없으면 `.claude`로 채운다.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decode(String.self, forKey: .name)
+        configDir = try container.decode(String.self, forKey: .configDir)
+        service = try container.decodeIfPresent(ServiceID.self, forKey: .service) ?? .claude
     }
 }
 

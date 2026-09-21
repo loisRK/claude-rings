@@ -6,7 +6,10 @@ let package = Package(
     platforms: [.macOS(.v26)],
     targets: [
         .target(name: "ClaudeRingsCore"),
-        .executableTarget(name: "ClaudeRings", dependencies: ["ClaudeRingsCore"]),
+        .executableTarget(
+            name: "ClaudeRings",
+            dependencies: ["ClaudeRingsCore"],
+            resources: [.process("Resources")]),
         .testTarget(name: "ClaudeRingsCoreTests", dependencies: ["ClaudeRingsCore"]),
     ]
 )
