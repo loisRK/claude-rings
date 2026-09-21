@@ -76,6 +76,18 @@ struct SessionWatcherTests {
         #expect(sut.tick(now: t0.addingTimeInterval(22)).shouldQuit == true)
     }
 
+    @Test func ignoresNonPositivePIDs() throws {
+        try writeSession(pid: 0, configDir: "~/.claude")
+        try writeSession(pid: -100, configDir: "~/.claude/work")
+        var sut = watcher(alive: [0, -100])
+
+        let snapshot = sut.tick(now: t0)
+
+        #expect(snapshot.activeConfigDirs.isEmpty)
+        #expect(FileManager.default.fileExists(atPath: dir.appending(path: "0").path))
+        #expect(FileManager.default.fileExists(atPath: dir.appending(path: "-100").path))
+    }
+
     @Test func missingDirectoryCountsAsNoSessions() {
         var sut = SessionWatcher(
             directory: dir.appending(path: "nope"), checker: FakeChecker(alive: []), grace: 0, home: home)

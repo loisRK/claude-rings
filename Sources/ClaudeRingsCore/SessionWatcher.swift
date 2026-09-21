@@ -48,7 +48,7 @@ public struct SessionWatcher: Sendable {
         var liveCount = 0
 
         for name in names {
-            guard let pid = Int32(name) else { continue }
+            guard let pid = Int32(name), pid > 0 else { continue }
             let file = directory.appending(path: name)
             guard checker.isAlive(pid) else {
                 try? fileManager.removeItem(at: file)
