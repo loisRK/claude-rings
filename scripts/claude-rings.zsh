@@ -5,8 +5,11 @@ claude_rings_run() {
   local dir="$HOME/.claude-rings/sessions"
   mkdir -p "$dir" && print -r -- "$cfg" > "$dir/$$"
   pgrep -x ClaudeRings >/dev/null || open -g "$HOME/Applications/ClaudeRings.app"
-  CLAUDE_CONFIG_DIR="$cfg" command claude "$@"
-  local rc=$?
-  rm -f "$dir/$$"
-  return $rc
+  # claude가 인터럽트(Ctrl-C)로 죽어도 세션 파일이 남지 않도록 always 블록에서 정리한다.
+  # always 블록이 자체적으로 실패하지 않는 한 종료 코드는 try 블록의 것을 그대로 따른다.
+  {
+    CLAUDE_CONFIG_DIR="$cfg" command claude "$@"
+  } always {
+    rm -f "$dir/$$"
+  }
 }
