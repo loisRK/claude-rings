@@ -1,15 +1,41 @@
 import AppKit
 import ClaudeRingsCore
+import Foundation
 import SwiftUI
 
 /// 서비스별 로고 에셋을 찾는다. `Resources/logos/<service.rawValue>.png`가 없으면 nil을
 /// 돌려줘 호출부가 `FallbackGlyph`(중립 대체 도형)를 쓰게 한다.
+@MainActor
 enum ServiceLogo {
+    private static var cache: [ServiceID: NSImage?] = [:]
+    private static var warnedMissing: Set<ServiceID> = []
+
     static func image(for service: ServiceID) -> NSImage? {
-        guard let url = Bundle.module.url(
-            forResource: service.rawValue, withExtension: "png", subdirectory: "logos")
-        else { return nil }
-        return NSImage(contentsOf: url)
+        if let cached = cache[service] { return cached }
+        let resolved = load(for: service)
+        cache[service] = resolved
+        if resolved == nil, !warnedMissing.contains(service) {
+            warnedMissing.insert(service)
+            FileHandle.standardError.write(
+                Data("claude-rings: \(service.rawValue) 서비스의 로고 에셋을 찾지 못해 대체 도형을 씁니다\n".utf8))
+        }
+        return resolved
+    }
+
+    private static func load(for service: ServiceID) -> NSImage? {
+        // Package.swift가 리소스를 `.copy`로 처리해 logos/ 폴더 구조가 보존되므로
+        // 우선 그 경로로 찾고, 혹시 `.process`로 평평해진 배치를 쓰더라도 동작하도록
+        // 폴더 없이 파일명만으로도 한 번 더 찾아본다.
+        if let url = Bundle.module.url(
+            forResource: service.rawValue, withExtension: "png", subdirectory: "logos"),
+           let image = NSImage(contentsOf: url) {
+            return image
+        }
+        if let url = Bundle.module.url(forResource: service.rawValue, withExtension: "png"),
+           let image = NSImage(contentsOf: url) {
+            return image
+        }
+        return nil
     }
 }
 

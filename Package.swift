@@ -9,7 +9,9 @@ let package = Package(
         .executableTarget(
             name: "ClaudeRings",
             dependencies: ["ClaudeRingsCore"],
-            resources: [.process("Resources")]),
+            // .process는 폴더 구조를 평평하게 만들어 logos/claude.png가 claude.png로
+            // 바뀌어 버린다(검증 중 발견). .copy로 logos/ 폴더 구조를 그대로 보존한다.
+            resources: [.copy("Resources/logos")]),
         .testTarget(name: "ClaudeRingsCoreTests", dependencies: ["ClaudeRingsCore"]),
     ]
 )
