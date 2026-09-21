@@ -52,4 +52,25 @@ struct UsageTests {
     func remainingPercentIsRoundedAndClamped(utilization: Double, expected: Int) {
         #expect(UsageWindow(utilization: utilization, resetsAt: nil).remainingPercent == expected)
     }
+
+    // MARK: - M5: 리셋 시각이 지난 창은 오래된 값으로 취급
+
+    @Test func clearingExpiredWindowsNilsOutPastResetsAt() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let usage = Usage(
+            session: UsageWindow(utilization: 10, resetsAt: now.addingTimeInterval(-1)),
+            weekly: UsageWindow(utilization: 20, resetsAt: now.addingTimeInterval(100)))
+
+        let cleared = usage.clearingExpiredWindows(now: now)
+
+        #expect(cleared.session == nil)
+        #expect(cleared.weekly == usage.weekly)
+    }
+
+    @Test func clearingExpiredWindowsKeepsWindowsWithoutResetDate() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let usage = Usage(session: UsageWindow(utilization: 10, resetsAt: nil), weekly: nil)
+
+        #expect(usage.clearingExpiredWindows(now: now) == usage)
+    }
 }

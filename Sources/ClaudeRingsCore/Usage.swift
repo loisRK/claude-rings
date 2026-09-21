@@ -24,6 +24,16 @@ public struct Usage: Equatable, Sendable {
         self.session = session
         self.weekly = weekly
     }
+
+    /// 리셋 시각이 이미 지난 창은 다음 조회 전까지도 오래된 값이므로 없는 것으로 취급한다(M5).
+    /// 화면은 이 값을 "—"로 표시하게 된다.
+    public func clearingExpiredWindows(now: Date = .now) -> Usage {
+        func clear(_ window: UsageWindow?) -> UsageWindow? {
+            guard let window, let resetsAt = window.resetsAt, resetsAt <= now else { return window }
+            return nil
+        }
+        return Usage(session: clear(session), weekly: clear(weekly))
+    }
 }
 
 /// 비공식 API라 스키마가 바뀔 수 있으므로 필드별로 관대하게 파싱한다.
