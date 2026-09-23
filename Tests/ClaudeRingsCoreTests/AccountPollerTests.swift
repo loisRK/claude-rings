@@ -32,6 +32,34 @@ final class StubFetcher: UsageFetching, @unchecked Sendable {
     }
 }
 
+final class StubRefresher: TokenRefreshing, @unchecked Sendable {
+    private let lock = NSLock()
+    private let result: RefreshResult
+    private(set) var calls: [(refreshToken: String, scopes: [String])] = []
+
+    init(_ result: RefreshResult) { self.result = result }
+
+    func refresh(refreshToken: String, scopes: [String]) async -> RefreshResult {
+        lock.withLock {
+            calls.append((refreshToken, scopes))
+            return result
+        }
+    }
+}
+
+final class RecordingWriter: CredentialWriting, @unchecked Sendable {
+    private let lock = NSLock()
+    private(set) var written: [Data] = []
+    var succeeds = true
+
+    func write(_ raw: Data, for account: Account) -> Bool {
+        lock.withLock {
+            written.append(raw)
+            return succeeds
+        }
+    }
+}
+
 struct AccountPollerTests {
     let account = Account(name: "work", configDir: "~/.claude/work")
     let usage = Usage(session: UsageWindow(utilization: 10, resetsAt: nil), weekly: nil)
@@ -155,5 +183,90 @@ struct AccountPollerTests {
 
         #expect(outcome.retryAfter == 3544)
         #expect(outcome.transientFailure == true)
+    }
+
+    // MARK: - 자동 갱신
+
+    private func credential(_ token: String, expiresIn: TimeInterval, refreshToken: String? = "r-old") -> Credential {
+        Credential(
+            accessToken: token,
+            expiresAt: Date.now.addingTimeInterval(expiresIn),
+            refreshToken: refreshToken,
+            scopes: ["user:profile"],
+            raw: Data(#"{"claudeAiOauth":{"accessToken":"\#(token)","refreshToken":"r-old"}}"#.utf8))
+    }
+
+    @Test func refreshesCredentialThatIsAboutToExpire() async {
+        let refresher = StubRefresher(.ok(
+            RefreshedTokens(accessToken: "a-new", refreshToken: "r-new", expiresIn: 28800, refreshTokenExpiresIn: nil)))
+        let writer = RecordingWriter()
+        let fetcher = StubFetcher([.ok(usage)])
+        let poller = AccountPoller(
+            tokens: StubTokens([.success(credential("a-old", expiresIn: 30))]),
+            fetcher: fetcher, refresher: refresher, writer: writer)
+
+        let outcome = await poller.poll(account, previous: .loading)
+
+        #expect(refresher.calls.map(\.refreshToken) == ["r-old"])
+        #expect(refresher.calls.first?.scopes == ["user:profile"])
+        #expect(writer.written.count == 1)
+        #expect(fetcher.tokensSeen == ["a-new"])
+        #expect(outcome.status == .ok(usage))
+    }
+
+    @Test func doesNotRefreshCredentialWithPlentyOfTimeLeft() async {
+        let refresher = StubRefresher(.failed)
+        let poller = AccountPoller(
+            tokens: StubTokens([.success(credential("a-old", expiresIn: 3600))]),
+            fetcher: StubFetcher([.ok(usage)]), refresher: refresher, writer: RecordingWriter())
+
+        _ = await poller.poll(account, previous: .loading)
+
+        #expect(refresher.calls.isEmpty)
+    }
+
+    /// 갱신하는 사이 Claude Code가 먼저 갱신했다면, 서버가 로테이션했을 때 우리 응답을 쓰면
+    /// CLI가 저장한 refresh token을 덮어써 계정이 깨진다. 저장된 값을 그대로 따른다.
+    @Test func yieldsToClaudeCodeWhenItRefreshedConcurrently() async {
+        let writer = RecordingWriter()
+        let fetcher = StubFetcher([.ok(usage)])
+        let poller = AccountPoller(
+            tokens: StubTokens([
+                .success(credential("a-old", expiresIn: 30, refreshToken: "r-old")),
+                .success(credential("a-by-cli", expiresIn: 28800, refreshToken: "r-by-cli")),
+            ]),
+            fetcher: fetcher,
+            refresher: StubRefresher(.ok(
+                RefreshedTokens(accessToken: "a-ours", refreshToken: "r-ours", expiresIn: 28800, refreshTokenExpiresIn: nil))),
+            writer: writer)
+
+        _ = await poller.poll(account, previous: .loading)
+
+        #expect(writer.written.isEmpty)
+        #expect(fetcher.tokensSeen == ["a-by-cli"])
+    }
+
+    @Test func refreshFailureLeavesKeychainUntouched() async {
+        let writer = RecordingWriter()
+        let fetcher = StubFetcher([.ok(usage)])
+        let poller = AccountPoller(
+            tokens: StubTokens([.success(credential("a-old", expiresIn: -1))]),
+            fetcher: fetcher, refresher: StubRefresher(.failed), writer: writer)
+
+        let outcome = await poller.poll(account, previous: .ok(usage))
+
+        #expect(writer.written.isEmpty)
+        #expect(fetcher.tokensSeen.isEmpty)
+        #expect(outcome.status == .expired)
+    }
+
+    @Test func invalidGrantLeavesKeychainUntouched() async {
+        let writer = RecordingWriter()
+        let poller = AccountPoller(
+            tokens: StubTokens([.success(credential("a-old", expiresIn: -1))]),
+            fetcher: StubFetcher([.ok(usage)]), refresher: StubRefresher(.invalidGrant), writer: writer)
+
+        #expect(await poller.poll(account, previous: .ok(usage)).status == .expired)
+        #expect(writer.written.isEmpty)
     }
 }

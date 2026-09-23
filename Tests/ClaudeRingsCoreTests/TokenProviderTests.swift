@@ -7,7 +7,7 @@ struct FakeRunner: CommandRunner {
     var output: String
     var expectedService: String? = nil
 
-    func run(_ executable: String, _ arguments: [String]) -> (status: Int32, output: Data) {
+    func run(_ executable: String, _ arguments: [String], input: Data?) -> (status: Int32, output: Data) {
         if let expectedService {
             guard executable == "/usr/bin/security",
                   arguments == ["find-generic-password", "-s", expectedService, "-w"]
@@ -46,6 +46,18 @@ struct TokenProviderTests {
         let runner = FakeRunner(status: 0, output: #"{"claudeAiOauth":{"accessToken":"tok-123"}}"#)
 
         #expect(try KeychainTokenProvider(runner: runner).credential(for: account).expiresAt == nil)
+    }
+
+    @Test func credentialCarriesRefreshTokenScopesAndRawJSON() throws {
+        let json = #"{"claudeAiOauth":{"accessToken":"a","refreshToken":"r","scopes":["x","y"]}}"#
+        let provider = KeychainTokenProvider(runner: FakeRunner(status: 0, output: json))
+
+        let credential = try provider.credential(for: account)
+
+        #expect(credential.refreshToken == "r")
+        #expect(credential.scopes == ["x", "y"])
+        // 갱신 결과를 되쓸 때 모르는 필드를 잃지 않으려면 원본 JSON이 필요하다.
+        #expect(credential.raw == Data(json.utf8))
     }
 
     @Test func missingItemThrowsNotFound() {

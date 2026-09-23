@@ -1,5 +1,6 @@
 import AppKit
 import ClaudeRingsCore
+import os
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -10,9 +11,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var sessionTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // 토큰 자동 갱신은 Keychain 쓰기가 실제로 되는 환경에서만 켠다. GUI 앱에는 제어
+        // 터미널이 없어 `security`가 값을 stdin에서 받는지 미리 알 수 없으므로, 실제
+        // 자격증명을 건드리기 전에 일회용 항목으로 한 번 확인한다.
+        let writer = KeychainCredentialWriter()
+        let canRefresh = writer.verifyWritable()
+        Logger(subsystem: "com.loisrk.ClaudeRings", category: "auth")
+            .notice("토큰 자동 갱신: \(canRefresh ? "켜짐" : "꺼짐(Keychain 쓰기 불가)", privacy: .public)")
         let model = UsageViewModel(
             config: store.load(),
-            registry: .claudeOnly())
+            registry: .claudeOnly(
+                refresher: canRefresh ? OAuthTokenRefresher() : nil,
+                writer: canRefresh ? writer : nil))
         let store = store
         let loginItem = LoginItemModel()
         let theme = ThemeStore()

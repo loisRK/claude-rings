@@ -22,7 +22,8 @@ Claude Code는 config 디렉터리마다 OAuth 인증 정보를 **별도의 macO
 
 ### 범위 밖(Non-goals)
 - 토큰·비용 통계(일별 사용량, 모델별 비용 등)
-- 토큰 갱신(refresh) 및 Keychain 쓰기 — 위젯은 **읽기 전용**입니다. (재검토 기록: §2 "토큰 수명과 갱신")
+- 로그인·로그아웃 흐름 — 최초 로그인은 Claude Code CLI로 합니다. 앱은 만료가 임박한
+  access token을 갱신할 뿐, 새로 로그인하지는 않습니다(§2 "토큰 수명과 갱신").
 - macOS 외 플랫폼
 
 ## 2. 핵심 기술 사실
@@ -36,16 +37,15 @@ Claude Code는 config 디렉터리마다 OAuth 인증 정보를 **별도의 macO
 | 사용량 API | `GET https://api.anthropic.com/api/oauth/usage`, 헤더 `Authorization: Bearer <accessToken>`, `anthropic-beta: oauth-2025-04-20` |
 | API 상태 | **비공식 엔드포인트**입니다. 구현 1단계에서 실제 응답 스키마를 검증하고, 스키마가 바뀌어도 앱이 죽지 않도록 방어적으로 파싱합니다. |
 
-### 토큰 수명과 갱신 — 조사 기록 (2026-09-22, 구현 보류)
+### 토큰 수명과 갱신
 
-메뉴바에 사용량이 "CLI 창에 들어가야만" 보이는 현상의 원인을 조사한 결과입니다. 원인은
-앱 실행 시점이 아니라 **access token 만료**였습니다. 구현은 하지 않았고, 아래는 근거와
-설계 선택지만 남깁니다.
+메뉴바에 사용량이 "CLI 창에 들어가야만" 보이던 원인은 **access token 만료**였습니다.
+아래 1~5가 조사 결과이고, 그에 따라 앱이 스스로 갱신하도록 구현했습니다(2026-09-23).
 
 **1. access token은 단기(약 8시간)입니다.** Keychain의 자격증명 JSON은 `accessToken`·
 `refreshToken`·`expiresAt`·`refreshTokenExpiresAt`·`scopes`·`subscriptionType`·
-`rateLimitTier`를 담습니다. 이 앱은 읽기만 하고 갱신하지 않으므로, CLI를 반나절 이상 쓰지
-않으면 토큰이 만료돼 401 → `expired`로 떨어집니다. CLI를 실행하면 CLI가 갱신해 Keychain에
+`rateLimitTier`를 담습니다. 예전에는 앱이 읽기만 했으므로 CLI를 반나절 이상 쓰지 않으면
+토큰이 만료돼 401 → `expired`로 떨어졌습니다. CLI를 실행하면 CLI가 갱신해 Keychain에
 새로 쓰기 때문에 그때부터 다시 보입니다.
 
 **2. CLI는 만료 5분 전부터만 갱신합니다.**
@@ -74,15 +74,32 @@ scope만 있으면 됩니다.
 창도 ACL 초기화도 없습니다. Security.framework를 직접 쓰면 서명이 다른 앱이라 허용 창이 뜰
 수 있으니, 쓰기를 도입한다면 읽기와 마찬가지로 `security` CLI를 경유해야 합니다.
 
+#### 구현 — 앱이 직접 갱신
+
+`AccountPoller`가 조회 직전에 자격증명을 보고, 만료까지 **60초 이하**면 스스로 갱신합니다.
+Claude Code는 300초 전부터 갱신하므로, 늦게 잡아 CLI가 떠 있으면 CLI에 양보합니다.
+
+| 단계 | 구현 |
+|---|---|
+| 갱신 요청 | `OAuthTokenRefresher` — 위 엔드포인트·본문 그대로 |
+| 응답 병합 | `CredentialJSON.applying` — 원본 JSON에서 토큰 관련 키만 바꿔 넣어, 앱이 모르는 필드를 잃지 않음 |
+| 되쓰기 | `KeychainCredentialWriter` — Claude Code와 같은 `security` 경유. 값은 **stdin**으로 넘겨 `ps`에 노출되지 않게 함 |
+| 쓰기 가능 확인 | 앱 시작 시 `verifyWritable()`이 일회용 항목(`claude-rings-write-probe`)으로 쓰기·되읽기·삭제를 확인. 실패하면 갱신 기능을 켜지 않고 읽기 전용으로 동작 |
+
+경쟁과 실패를 다루는 규칙:
+
+- **되쓰기 직전 Keychain 재확인** — 그 사이 CLI가 갱신해 refresh token이 달라졌으면, 우리
+  응답을 버리고 저장된 값을 씁니다. 로테이션된 값을 덮어써 계정을 깨뜨리지 않기 위함입니다.
+- **실패하면 아무것도 쓰지 않습니다** — 네트워크 오류·`invalid_grant`·JSON 병합 실패·쓰기
+  실패 어느 경우든 기존 자격증명을 그대로 두고, 만료 검사에 따라 `expired`로 표시합니다.
+- `invalid_grant`는 refresh token까지 죽은 경우로, 앱이 복구할 수 없고 재로그인이 필요합니다.
+
 **남은 리스크 — 동시 갱신 경쟁.** `add-generic-password -U`는 last-writer-wins이고 락은
 발견하지 못했습니다. 앱과 CLI가 같은 창에서 동일한 refresh token으로 각각 갱신하면, 서버가
 로테이션하는 경우 나중 요청이 `invalid_grant`로 실패하고, 최악의 경우 무효한 refresh token이
-남아 그 계정이 재로그인을 요구할 수 있습니다. 갱신을 도입한다면 최소한 다음이 필요합니다.
-
-- CLI(만료 5분 전)보다 **늦게** 시도해 CLI에 양보합니다(예: 만료 60초 전).
-- 갱신 전후로 Keychain을 다시 읽어, 그 사이 값이 바뀌었으면 자기 응답을 버리고 새 값을 씁니다.
-- 갱신에 실패하면 기존 값을 **절대 덮어쓰지 않습니다.**
-- Non-goals의 "토큰 갱신 및 Keychain 쓰기 — 읽기 전용"과 README 보안 절을 함께 고쳐야 합니다.
+남아 그 계정이 재로그인을 요구할 수 있습니다. 위 세 규칙으로 창을 좁혔지만, 완전히 없애려면
+Keychain 수준의 잠금이 필요한데 `security`에는 그런 수단이 없습니다. 실사용에서는 CLI를
+거의 쓰지 않는 계정일수록 경쟁 자체가 드물어 실질 위험이 낮습니다.
 
 **검토했으나 채택하지 않은 대안 — 데스크탑/크롬 익스텐션 자격증명.** 둘 다 OAuth access
 token이 아니라 claude.ai 세션 쿠키를 각자의 암호화된 저장소에 보관합니다(데스크탑은
