@@ -43,7 +43,13 @@ public enum StatusReducer {
         switch result {
         case .ok(let usage): .ok(usage)
         case .unauthorized: .expired
-        case .rateLimited(_), .failed: previous.usage.map(AccountStatus.stale) ?? .error
+        case .rateLimited(_), .failed:
+            // 만료는 일시적 실패에 덮이지 않는다. 덮이면 "조회 일시 제한"이 "만료"를 가려
+            // 재로그인이 필요하다는 사실이 사용자에게 보이지 않는다.
+            switch previous {
+            case .expired: .expired
+            default: previous.usage.map(AccountStatus.stale) ?? .error
+            }
         }
     }
 }

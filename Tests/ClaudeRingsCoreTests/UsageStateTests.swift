@@ -32,7 +32,13 @@ struct UsageStateTests {
 
     @Test func transientFailureWithoutUsageIsError() {
         #expect(StatusReducer.next(previous: .loading, result: .failed) == .error)
-        #expect(StatusReducer.next(previous: .expired, result: .rateLimited(retryAfter: nil)) == .error)
+    }
+
+    /// 만료된 토큰으로 조회하다 429를 받으면, "조회 일시 제한"이 "만료"를 가려
+    /// 사용자가 재로그인이 필요하다는 사실을 알 수 없게 된다. 만료 상태는 유지한다.
+    @Test func expiredSurvivesTransientFailure() {
+        #expect(StatusReducer.next(previous: .expired, result: .rateLimited(retryAfter: nil)) == .expired)
+        #expect(StatusReducer.next(previous: .expired, result: .failed) == .expired)
     }
 
     @Test func backoffDoublesUpToMaximumAndResets() {

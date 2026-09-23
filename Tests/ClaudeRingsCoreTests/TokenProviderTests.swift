@@ -27,21 +27,39 @@ struct TokenProviderTests {
             expectedService: KeychainService.serviceName(forConfigDir: account.configDir))
         let provider = KeychainTokenProvider(runner: runner)
 
-        #expect(try provider.accessToken(for: account) == "tok-123")
+        #expect(try provider.credential(for: account).accessToken == "tok-123")
+    }
+
+    @Test func parsesExpiryFromCredentials() throws {
+        // Claude Code는 expiresAt을 밀리초 단위 epoch로 저장한다.
+        let runner = FakeRunner(
+            status: 0, output: #"{"claudeAiOauth":{"accessToken":"tok-123","expiresAt":1790067000000}}"#)
+        let provider = KeychainTokenProvider(runner: runner)
+
+        let credential = try provider.credential(for: account)
+
+        #expect(credential.accessToken == "tok-123")
+        #expect(credential.expiresAt == Date(timeIntervalSince1970: 1790067000))
+    }
+
+    @Test func credentialWithoutExpiresAtHasNoExpiry() throws {
+        let runner = FakeRunner(status: 0, output: #"{"claudeAiOauth":{"accessToken":"tok-123"}}"#)
+
+        #expect(try KeychainTokenProvider(runner: runner).credential(for: account).expiresAt == nil)
     }
 
     @Test func missingItemThrowsNotFound() {
         let provider = KeychainTokenProvider(runner: FakeRunner(status: 44, output: ""))
-        #expect(throws: TokenError.notFound) { try provider.accessToken(for: account) }
+        #expect(throws: TokenError.notFound) { try provider.credential(for: account) }
     }
 
     @Test func otherFailureThrowsAccessDenied() {
         let provider = KeychainTokenProvider(runner: FakeRunner(status: 51, output: ""))
-        #expect(throws: TokenError.accessDenied) { try provider.accessToken(for: account) }
+        #expect(throws: TokenError.accessDenied) { try provider.credential(for: account) }
     }
 
     @Test func unparsableOutputThrowsMalformed() {
         let provider = KeychainTokenProvider(runner: FakeRunner(status: 0, output: "garbage"))
-        #expect(throws: TokenError.malformed) { try provider.accessToken(for: account) }
+        #expect(throws: TokenError.malformed) { try provider.credential(for: account) }
     }
 }

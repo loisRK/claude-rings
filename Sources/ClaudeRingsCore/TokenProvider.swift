@@ -6,8 +6,20 @@ public enum TokenError: Error, Equatable, Sendable {
     case malformed
 }
 
+/// Keychain에서 읽은 자격증명. 토큰 값과, Claude Code가 함께 저장한 만료 시각을 담는다.
+public struct Credential: Equatable, Sendable {
+    public let accessToken: String
+    /// 만료 시각. 자격증명에 값이 없으면 nil이며, 이때는 만료 여부를 판단하지 않는다.
+    public let expiresAt: Date?
+
+    public init(accessToken: String, expiresAt: Date? = nil) {
+        self.accessToken = accessToken
+        self.expiresAt = expiresAt
+    }
+}
+
 public protocol TokenProvider: Sendable {
-    func accessToken(for account: Account) throws(TokenError) -> String
+    func credential(for account: Account) throws(TokenError) -> Credential
 }
 
 public protocol CommandRunner: Sendable {
@@ -46,7 +58,7 @@ public struct KeychainTokenProvider: TokenProvider {
         self.runner = runner
     }
 
-    public func accessToken(for account: Account) throws(TokenError) -> String {
+    public func credential(for account: Account) throws(TokenError) -> Credential {
         let service = KeychainService.serviceName(forConfigDir: account.configDir)
         let result = runner.run("/usr/bin/security", ["find-generic-password", "-s", service, "-w"])
         switch result.status {
@@ -56,12 +68,19 @@ public struct KeychainTokenProvider: TokenProvider {
         }
 
         struct Credentials: Decodable {
-            struct OAuth: Decodable { let accessToken: String }
+            struct OAuth: Decodable {
+                let accessToken: String
+                /// 밀리초 단위 epoch. 예전 자격증명에는 없을 수 있어 옵셔널로 읽는다.
+                let expiresAt: Double?
+            }
             let claudeAiOauth: OAuth
         }
         guard let credentials = try? JSONDecoder().decode(Credentials.self, from: result.output) else {
             throw .malformed
         }
-        return credentials.claudeAiOauth.accessToken
+        let oauth = credentials.claudeAiOauth
+        return Credential(
+            accessToken: oauth.accessToken,
+            expiresAt: oauth.expiresAt.map { Date(timeIntervalSince1970: $0 / 1000) })
     }
 }
