@@ -84,12 +84,16 @@ Claude Code는 300초 전부터 갱신하므로, 늦게 잡아 CLI가 떠 있으
 | 갱신 요청 | `OAuthTokenRefresher` — 위 엔드포인트·본문 그대로 |
 | 응답 병합 | `CredentialJSON.applying` — 원본 JSON에서 토큰 관련 키만 바꿔 넣어, 앱이 모르는 필드를 잃지 않음 |
 | 되쓰기 | `KeychainCredentialWriter` — Claude Code와 같은 `security` 경유. 값은 **stdin**으로 넘겨 `ps`에 노출되지 않게 함 |
-| 쓰기 가능 확인 | 앱 시작 시 `verifyWritable()`이 일회용 항목(`claude-rings-write-probe`)으로 쓰기·되읽기·삭제를 확인. 실패하면 갱신 기능을 켜지 않고 읽기 전용으로 동작 |
+| 전달 방식 선택 | 앱 시작 시 `resolveTransport()`가 일회용 항목(`claude-rings-write-probe`)에 값을 **실제로 써 보고 되읽어**, 왕복에 성공한 방식만 쓴다. 순서는 `stdin`(한 번) → `stdinTwice`(확인 입력까지 두 번) → `argument`(마지막 수단, `ps` 노출). 전부 실패하면 갱신을 켜지 않고 읽기 전용으로 동작 |
 
 경쟁과 실패를 다루는 규칙:
 
 - **되쓰기 직전 Keychain 재확인** — 그 사이 CLI가 갱신해 refresh token이 달라졌으면, 우리
   응답을 버리고 저장된 값을 씁니다. 로테이션된 값을 덮어써 계정을 깨뜨리지 않기 위함입니다.
+- **왕복 검증 없이는 쓰지 않습니다** — GUI 앱에서 `-w`를 마지막에 두고 값을 한 번만 보내면
+  `security`가 종료 코드 0을 내면서도 **다른 값을 저장하는 것이 실측으로 확인됐습니다**
+  (실제로는 값을 두 번 요구합니다). 그래서 실제 자격증명에 쓰기 전에 일회용 항목으로 방식을
+  결정합니다.
 - **실패하면 아무것도 쓰지 않습니다** — 네트워크 오류·`invalid_grant`·JSON 병합 실패·쓰기
   실패 어느 경우든 기존 자격증명을 그대로 두고, 만료 검사에 따라 `expired`로 표시합니다.
 - `invalid_grant`는 refresh token까지 죽은 경우로, 앱이 복구할 수 없고 재로그인이 필요합니다.

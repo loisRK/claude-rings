@@ -14,15 +14,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 토큰 자동 갱신은 Keychain 쓰기가 실제로 되는 환경에서만 켠다. GUI 앱에는 제어
         // 터미널이 없어 `security`가 값을 stdin에서 받는지 미리 알 수 없으므로, 실제
         // 자격증명을 건드리기 전에 일회용 항목으로 한 번 확인한다.
-        let writer = KeychainCredentialWriter()
-        let canRefresh = writer.verifyWritable()
+        let probe = KeychainCredentialWriter()
+        let transport = probe.resolveTransport()
+        let writer = transport.map { probe.using($0) }
         Logger(subsystem: "com.loisrk.ClaudeRings", category: "auth")
-            .notice("토큰 자동 갱신: \(canRefresh ? "켜짐" : "꺼짐(Keychain 쓰기 불가)", privacy: .public)")
+            .notice("토큰 자동 갱신: \(transport == nil ? "꺼짐" : "켜짐", privacy: .public) (전달 방식: \(transport.map { String(describing: $0) } ?? "없음", privacy: .public))")
         let model = UsageViewModel(
             config: store.load(),
             registry: .claudeOnly(
-                refresher: canRefresh ? OAuthTokenRefresher() : nil,
-                writer: canRefresh ? writer : nil))
+                refresher: writer == nil ? nil : OAuthTokenRefresher(),
+                writer: writer))
         let store = store
         let loginItem = LoginItemModel()
         let theme = ThemeStore()
